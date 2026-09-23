@@ -12,7 +12,7 @@ function ChatQueryHandler() {
 
 export default function ChatPage() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-[#f8f8fb]">Loading...</div>}>
+    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-[#fdfbf7] dark:bg-[#121016] text-[#111827] dark:text-white font-semibold">Loading...</div>}>
       <ChatQueryHandler />
     </Suspense>
   );

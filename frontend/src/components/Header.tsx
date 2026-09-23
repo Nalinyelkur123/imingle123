@@ -83,63 +83,63 @@ export function Header() {
   };
 
   return (
-    <header className="shrink-0 h-[60px] sm:h-[68px] relative z-50 flex w-full items-center justify-between px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-      {/* Umingle Logo */}
-      <Link href="/" className="noSelect flex items-center gap-2 sm:gap-2.5" id="umingle-logo-link">
-        {/* Rounded Purple Icon */}
-        <div className="flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-xl bg-[#673ddc] shadow-sm">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="sm:w-6 sm:h-6">
-            <path
-              d="M20 11.5C20 15.6421 16.4183 19 12 19C10.6387 19 9.35517 18.6833 8.22557 18.1251L4 19.5L5.37488 15.7744C4.50294 14.5262 4 13.0762 4 11.5C4 7.35786 7.58172 4 12 4C16.4183 4 20 7.35786 20 11.5Z"
-              stroke="#ffffff"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+    <header className="shrink-0 h-[52px] sm:h-[58px] relative z-50 flex w-full items-center justify-between px-3 sm:px-4 lg:px-6 bg-[#fdfbf7] dark:bg-[#121016] border-b border-gray-200/70 dark:border-white/5">
+      {/* V Mingle Logo */}
+      <Link href="/" className="noSelect flex items-center gap-2.5 sm:gap-3 group" id="vmingle-logo-link">
+        {/* Rounded Brand Icon */}
+        <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 p-0.5 shadow-sm group-hover:scale-105 transition-transform overflow-hidden">
+          <div className="h-full w-full rounded-[10px] bg-white flex items-center justify-center p-1 overflow-hidden">
+            <img
+              src="/favicon.png"
+              alt="V Mingle logo"
+              className="h-full w-full object-contain select-none pointer-events-none"
             />
-            <circle cx="8.5" cy="11.5" r="1.2" fill="#ffffff" />
-            <circle cx="12" cy="11.5" r="1.2" fill="#ffffff" />
-            <circle cx="15.5" cy="11.5" r="1.2" fill="#ffffff" />
-          </svg>
+          </div>
         </div>
 
-        {/* Wordmark "umingle" in bold text matching reference */}
-        <span className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#18181b] dark:text-white">
-          umingle
-        </span>
+        {/* Wordmark "V Mingle" in bold modern font */}
+        <div className="flex flex-col">
+          <span className="text-xl sm:text-[23px] font-black tracking-tight text-[#111827] dark:text-white leading-none">
+            V Mingle
+          </span>
+          <span className="hidden sm:inline text-[9px] font-semibold text-gray-400 tracking-wider mt-0.5">
+            Random Video &amp; Text Chat
+          </span>
+        </div>
       </Link>
 
       {/* Right Controls */}
-      <div className="flex items-center gap-3">
-        {/* Dark/Light Pill Switch matching Screenshot 1 */}
+      <div className="flex items-center gap-2.5 sm:gap-3">
+        {/* Dark/Light Pill Switch */}
         <button
           onClick={toggleDarkMode}
-          className="relative flex h-7 w-12 cursor-pointer items-center rounded-full border border-gray-200 bg-[#f4f4f7] px-1 shadow-xs transition-colors hover:border-gray-300 dark:border-gray-700 dark:bg-[#1e1d2c]"
+          className="relative flex h-6 w-11 cursor-pointer items-center rounded-full border border-gray-200/90 bg-white px-0.5 shadow-2xs transition-colors hover:border-gray-300 dark:border-gray-700 dark:bg-[#1e1d2c]"
           aria-label="Toggle dark mode"
           id="theme-toggle-btn"
         >
           {/* Thumb */}
           <span
-            className={`h-5 w-5 rounded-full border border-gray-200 bg-white shadow-xs transition-transform duration-200 dark:border-gray-600 dark:bg-[#2e2c40] ${
+            className={`h-4.5 w-4.5 rounded-full border border-gray-200/80 bg-white shadow-2xs transition-transform duration-200 dark:border-gray-600 dark:bg-[#2e2c40] ${
               isDark ? "translate-x-5" : "translate-x-0"
             }`}
           />
 
           {/* Icon Moon or Sun */}
-          <span className="absolute right-1.5 text-[11px] select-none text-gray-500 dark:hidden">
+          <span className="absolute right-1 text-[10px] select-none text-gray-400 dark:hidden">
             🌙
           </span>
-          <span className="absolute left-1.5 text-[11px] select-none text-amber-300 hidden dark:inline">
+          <span className="absolute left-1 text-[10px] select-none text-amber-300 hidden dark:inline">
             ☀️
           </span>
         </button>
 
         {/* Online Count Pill */}
-        <div className="flex items-center gap-2 rounded-full border border-gray-200/90 bg-white px-3.5 py-1.5 shadow-xs dark:border-gray-700 dark:bg-[#161520]">
-          <span className="h-2 w-2 rounded-full bg-[#22c55e]" />
-          <strong className="text-sm font-bold text-[#673ddc] dark:text-[#a78bfa]">
-            {onlineCount}
+        <div className="flex items-center gap-1.5 rounded-full border border-gray-200/90 bg-white px-3 py-1 shadow-2xs dark:border-gray-700 dark:bg-[#1a1724]">
+          <span className="h-2 w-2 rounded-full bg-[#22c55e] animate-pulse" />
+          <strong className="text-xs sm:text-sm font-bold text-[#f43f5e] dark:text-[#fb7185]">
+            {onlineCount.endsWith("+") ? onlineCount : `${onlineCount}+`}
           </strong>
-          <span className="text-xs text-gray-600 dark:text-gray-400 font-normal">
+          <span className="text-xs text-gray-500 dark:text-gray-400 font-normal hidden min-[360px]:inline">
             online
           </span>
         </div>

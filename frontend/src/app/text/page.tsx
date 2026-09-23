@@ -2,8 +2,18 @@ import { ChatRoom } from "@/components/ChatRoom";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Umingle: Text Chat with Strangers",
-  description: "Connect via 1-on-1 random text chat on Umingle. Simple, fast, and anonymous.",
+  title: "Random Text Chat with Strangers",
+  description:
+    "Chat anonymously with strangers worldwide via free text chat on V Mingle (VMingle). No account required, instant matchmaking, and 100% private.",
+  alternates: {
+    canonical: "/text",
+  },
+  openGraph: {
+    title: "V Mingle: Random Text Chat with Strangers",
+    description:
+      "Chat anonymously with strangers worldwide via free text chat on V Mingle.",
+    url: "/text",
+  },
 };
 
 export default function TextPage() {

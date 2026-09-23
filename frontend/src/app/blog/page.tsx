@@ -4,8 +4,17 @@ import Link from "next/link";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Blog & Engineering Insights — Umingle",
-  description: "Read the latest engineering articles, security insights, and product updates from the Umingle team.",
+  title: "Blog & Engineering Insights",
+  description:
+    "Read the latest engineering articles, security insights, and product updates from the V Mingle (VMingle) engineering team.",
+  alternates: {
+    canonical: "/blog",
+  },
+  openGraph: {
+    title: "Blog & Engineering Insights — V Mingle",
+    description: "Read the latest engineering articles and product updates from V Mingle.",
+    url: "/blog",
+  },
 };
 
 export default function BlogPage() {
@@ -66,7 +75,7 @@ export default function BlogPage() {
   const regularArticles = articles.slice(1);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f6f6f9] text-[#18181b] dark:bg-[#0c0b12] dark:text-[#f4f4f7] transition-colors">
+    <div className="flex min-h-screen flex-col bg-[#fdfbf7] text-[#111827] dark:bg-[#121016] dark:text-[#f4f4f7] transition-colors">
       <Header />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
@@ -74,7 +83,7 @@ export default function BlogPage() {
         <div className="mb-6">
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#673ddc] hover:underline"
+            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#f43f5e] hover:underline"
           >
             ← Back to Home
           </Link>
@@ -82,8 +91,8 @@ export default function BlogPage() {
 
         {/* Hero Header */}
         <div className="mb-10 sm:mb-14 text-center max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#673ddc]/10 text-[#673ddc] dark:bg-[#673ddc]/20 dark:text-[#a78bfa] text-xs font-bold mb-3">
-            <span>✨</span> Umingle Engineering & Stories
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/10 text-[#f43f5e] dark:bg-rose-500/20 dark:text-rose-300 text-xs font-bold mb-3">
+            <span>✨</span> V Mingle Engineering &amp; Stories
           </div>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight">
             Latest Articles & Updates
@@ -94,12 +103,12 @@ export default function BlogPage() {
         </div>
 
         {/* Featured Article Card */}
-        <div className="mb-12 rounded-3xl bg-white dark:bg-[#151421] border border-gray-200/80 dark:border-white/10 p-6 sm:p-10 shadow-sm hover:border-[#673ddc]/50 transition-colors">
+        <div className="mb-12 rounded-3xl bg-white dark:bg-[#151421] border border-gray-200/80 dark:border-white/10 p-6 sm:p-10 shadow-sm hover:border-rose-400/50 transition-colors">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs mb-3">
-            <span className="px-2.5 py-0.5 rounded-full bg-[#673ddc] text-white font-bold uppercase tracking-wider text-[10px]">
+            <span className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-orange-400 to-rose-500 text-white font-bold uppercase tracking-wider text-[10px]">
               Featured
             </span>
-            <span className="font-semibold text-[#673ddc] dark:text-[#a78bfa]">
+            <span className="font-semibold text-[#f43f5e] dark:text-rose-300">
               {featured.category}
             </span>
             <span className="text-gray-300 dark:text-gray-700">•</span>
@@ -118,18 +127,18 @@ export default function BlogPage() {
 
           <div className="mt-6 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-[#673ddc] to-indigo-500 flex items-center justify-center text-white text-xs font-bold">
-                U
+              <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 flex items-center justify-center text-white text-xs font-bold">
+                V
               </div>
               <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                Umingle Engineering Team
+                V Mingle Engineering Team
               </span>
             </div>
             <Link
               href="/video"
-              className="inline-flex items-center gap-1 text-xs sm:text-sm font-bold text-[#673ddc] dark:text-[#a78bfa] hover:underline"
+              className="inline-flex items-center gap-1 text-xs sm:text-sm font-bold text-[#f43f5e] dark:text-rose-300 hover:underline"
             >
-              Try Umingle Video →
+              Try V Mingle Video →
             </Link>
           </div>
         </div>
@@ -139,11 +148,11 @@ export default function BlogPage() {
           {regularArticles.map((article) => (
             <article
               key={article.id}
-              className="flex flex-col justify-between p-6 rounded-2xl bg-white dark:bg-[#151421] border border-gray-200/80 dark:border-white/10 shadow-xs hover:border-[#673ddc]/40 transition-colors"
+              className="flex flex-col justify-between p-6 rounded-2xl bg-white dark:bg-[#151421] border border-gray-200/80 dark:border-white/10 shadow-xs hover:border-rose-400/40 transition-colors"
             >
               <div>
                 <div className="flex items-center gap-2 text-xs mb-2.5">
-                  <span className="font-semibold text-[#673ddc] dark:text-[#a78bfa]">
+                  <span className="font-semibold text-[#f43f5e] dark:text-rose-300">
                     {article.category}
                   </span>
                   <span className="text-gray-300 dark:text-gray-700">•</span>
@@ -161,7 +170,7 @@ export default function BlogPage() {
 
               <div className="mt-6 pt-4 border-t border-gray-100 dark:border-white/5 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                 <span>{article.date}</span>
-                <span className="font-semibold text-[#673ddc] dark:text-[#a78bfa]">
+                <span className="font-semibold text-[#f43f5e] dark:text-rose-300">
                   Engineering
                 </span>
               </div>
@@ -170,23 +179,23 @@ export default function BlogPage() {
         </div>
 
         {/* CTA Card */}
-        <div className="rounded-3xl bg-gradient-to-tr from-[#673ddc] to-indigo-600 text-white p-8 sm:p-12 text-center shadow-lg">
+        <div className="rounded-3xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 text-white p-8 sm:p-12 text-center shadow-lg shadow-rose-500/20">
           <h2 className="text-2xl sm:text-3xl font-black">
             Experience the new standard in random video chat
           </h2>
-          <p className="mt-2.5 text-xs sm:text-sm text-indigo-100 max-w-lg mx-auto">
-            Zero registrations, instant connections, and robust privacy protection.
+          <p className="mt-2.5 text-xs sm:text-sm text-rose-100 max-w-lg mx-auto">
+            Zero registrations, instant connections, and robust privacy protection on V Mingle.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/video"
-              className="px-6 py-2.5 rounded-xl bg-white text-[#673ddc] font-bold text-sm shadow-md hover:bg-gray-100 transition-all"
+              className="px-6 py-2.5 rounded-xl bg-white text-[#f43f5e] font-bold text-sm shadow-md hover:bg-gray-50 transition-all cursor-pointer"
             >
               Start Video Chat
             </Link>
             <Link
               href="/rules"
-              className="px-6 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-sm transition-all border border-white/20"
+              className="px-6 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-sm transition-all border border-white/20 cursor-pointer"
             >
               Read Community Rules
             </Link>

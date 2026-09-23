@@ -4,8 +4,17 @@ import Link from "next/link";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Community Rules & Guidelines — Umingle",
-  description: "Read the Umingle community rules and safety guidelines for random 1-on-1 video and text chat.",
+  title: "Community Rules & Safety Guidelines",
+  description:
+    "Read the V Mingle community rules and safety guidelines for random 1-on-1 video and text chat. Strict 18+ policy, zero tolerance for harassment.",
+  alternates: {
+    canonical: "/rules",
+  },
+  openGraph: {
+    title: "Community Rules & Safety Guidelines — V Mingle",
+    description: "Read the V Mingle community rules and safety guidelines.",
+    url: "/rules",
+  },
 };
 
 export default function RulesPage() {
@@ -19,7 +28,7 @@ export default function RulesPage() {
     {
       num: "02",
       title: "Strictly 18+ Community",
-      desc: "Umingle is exclusively intended for adults aged 18 and older. Any user under the age of 18 or anyone depicting minors in any form will be permanently banned and reported to relevant authorities.",
+      desc: "V Mingle is exclusively intended for adults aged 18 and older. Any user under the age of 18 or anyone depicting minors in any form will be permanently banned and reported to relevant authorities.",
       icon: "🔞",
     },
     {
@@ -49,7 +58,7 @@ export default function RulesPage() {
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f6f6f9] text-[#18181b] dark:bg-[#0c0b12] dark:text-[#f4f4f7] transition-colors">
+    <div className="flex min-h-screen flex-col bg-[#fdfbf7] text-[#111827] dark:bg-[#121016] dark:text-[#f4f4f7] transition-colors">
       <Header />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
@@ -57,7 +66,7 @@ export default function RulesPage() {
         <div className="mb-6">
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#673ddc] hover:underline"
+            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#f43f5e] hover:underline"
           >
             ← Back to Home
           </Link>
@@ -65,14 +74,14 @@ export default function RulesPage() {
 
         {/* Hero Section */}
         <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-14">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#673ddc]/10 text-[#673ddc] dark:bg-[#673ddc]/20 dark:text-[#a78bfa] text-xs font-bold mb-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/10 text-[#f43f5e] dark:bg-rose-500/20 dark:text-rose-300 text-xs font-bold mb-3">
             <span>🛡️</span> Safety & Conduct Guidelines
           </div>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight">
             Community Rules
           </h1>
           <p className="mt-3 text-sm sm:text-base text-gray-600 dark:text-gray-400">
-            Umingle is built on trust, respect, and anonymity. Please adhere to these guidelines to ensure a welcoming and safe environment for everyone.
+            V Mingle is built on trust, respect, and anonymity. Please adhere to these guidelines to ensure a welcoming and safe environment for everyone.
           </p>
         </div>
 
@@ -81,11 +90,11 @@ export default function RulesPage() {
           {rules.map((rule) => (
             <div
               key={rule.num}
-              className="relative flex flex-col p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#151421] border border-gray-200/80 dark:border-white/10 shadow-xs hover:border-[#673ddc]/50 transition-colors"
+              className="relative flex flex-col p-5 sm:p-6 rounded-2xl bg-white dark:bg-[#151421] border border-gray-200/80 dark:border-white/10 shadow-xs hover:border-rose-400/50 transition-colors"
             >
               <div className="flex items-center justify-between mb-3">
                 <span className="text-2xl">{rule.icon}</span>
-                <span className="text-xs font-mono font-bold text-[#673ddc] dark:text-[#a78bfa] bg-[#673ddc]/10 dark:bg-[#673ddc]/20 px-2 py-0.5 rounded-md">
+                <span className="text-xs font-mono font-bold text-[#f43f5e] dark:text-rose-300 bg-rose-500/10 dark:bg-rose-500/20 px-2 py-0.5 rounded-md">
                   RULE {rule.num}
                 </span>
               </div>
@@ -115,21 +124,21 @@ export default function RulesPage() {
         </div>
 
         {/* CTA Card */}
-        <div className="rounded-2xl bg-gradient-to-tr from-[#673ddc] to-indigo-600 text-white p-6 sm:p-10 text-center shadow-lg">
+        <div className="rounded-3xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 text-white p-6 sm:p-10 text-center shadow-lg shadow-rose-500/20">
           <h3 className="text-xl sm:text-2xl font-black">Ready to connect safely?</h3>
-          <p className="mt-2 text-xs sm:text-sm text-indigo-100 max-w-xl mx-auto">
-            Join thousands of users having friendly, anonymous conversations right now.
+          <p className="mt-2 text-xs sm:text-sm text-rose-100 max-w-xl mx-auto">
+            Join thousands of users having friendly, anonymous conversations right now on V Mingle.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/video"
-              className="px-6 py-2.5 rounded-xl bg-white text-[#673ddc] font-bold text-sm shadow-md hover:bg-gray-100 transition-all"
+              className="px-6 py-2.5 rounded-xl bg-white text-[#f43f5e] font-bold text-sm shadow-md hover:bg-gray-50 transition-all cursor-pointer"
             >
               Start Video Chat
             </Link>
             <Link
               href="/text"
-              className="px-6 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-sm transition-all border border-white/20"
+              className="px-6 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-sm transition-all border border-white/20 cursor-pointer"
             >
               Start Text Chat
             </Link>
