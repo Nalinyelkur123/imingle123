@@ -56,6 +56,7 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
   const [remoteStreamActive, setRemoteStreamActive] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showInterestsModal, setShowInterestsModal] = useState(false);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [selectedReportReason, setSelectedReportReason] = useState<ReportReason>(
     ReportReason.OTHER
   );
@@ -662,19 +663,19 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
   };
 
   return (
-    <div className="flex h-screen h-dvh w-full flex-col overflow-hidden bg-[#f6f6f9] dark:bg-[#0c0b12] text-[#18181b] dark:text-[#f4f4f7]">
+    <div className="flex h-screen h-dvh w-full flex-col overflow-hidden bg-[#fdfbf7] dark:bg-[#121016] text-[#111827] dark:text-[#f4f4f7]">
       {/* Universal Header */}
       <Header />
 
-      {/* Main Page Layout Container with balanced overall padding */}
-      <main className="flex-1 min-h-0 min-w-0 w-full max-w-7xl mx-auto flex flex-col p-3 sm:p-4 md:p-5 lg:p-6 overflow-hidden">
-        <div className="flex flex-1 min-h-0 min-w-0 w-full flex-col md:flex-row gap-3 sm:gap-4 md:gap-5 overflow-hidden">
+      {/* Main Page Layout Container */}
+      <main className="flex-1 min-h-0 min-w-0 w-full flex flex-col px-2.5 sm:px-3.5 lg:px-4 pt-1 pb-2.5 sm:pb-3 overflow-hidden">
+        <div className="flex flex-1 min-h-0 min-w-0 w-full flex-col md:flex-row gap-2 sm:gap-2.5 lg:gap-3 overflow-hidden">
           
           {/* ================================================================= */}
           {/* LEFT COLUMN: Dual Video Feeds (Desktop & Mobile Optimized)       */}
           {/* ================================================================= */}
           {mode === "video" && (
-            <div className="shrink-0 flex flex-col w-full md:w-[360px] lg:w-[420px] xl:w-[460px] md:h-full gap-2 sm:gap-2.5 overflow-hidden">
+            <div className="shrink-0 flex flex-col w-full md:w-[380px] lg:w-[430px] xl:w-[480px] 2xl:w-[520px] md:h-full gap-2 sm:gap-2.5 overflow-hidden">
               
               {/* Mobile View Toggle Bar (Only visible on small screens < md) */}
               <div className="flex md:hidden items-center justify-between px-1">
@@ -683,18 +684,18 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                   {chatState === ChatState.CONNECTED ? `Connected (${formatTimer(matchDuration)})` : chatState === ChatState.SEARCHING ? "Searching..." : "Video Preview"}
                 </span>
 
-                <div className="flex items-center gap-1 bg-gray-200/80 dark:bg-gray-800/80 rounded-lg p-0.5 text-[11px] font-medium">
+                <div className="flex items-center gap-1 bg-amber-100/70 dark:bg-white/10 rounded-lg p-0.5 text-[11px] font-medium border border-amber-200/50 dark:border-white/5">
                   <button
                     type="button"
                     onClick={() => setMobileViewMode("pip")}
-                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${mobileViewMode === "pip" ? "bg-white dark:bg-gray-700 text-[#673ddc] dark:text-white font-bold shadow-xs" : "text-gray-600 dark:text-gray-400"}`}
+                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${mobileViewMode === "pip" ? "bg-white dark:bg-[#1a1827] text-[#f43f5e] dark:text-[#fb7185] font-bold shadow-xs" : "text-gray-600 dark:text-gray-400"}`}
                   >
                     PiP View
                   </button>
                   <button
                     type="button"
                     onClick={() => setMobileViewMode("split")}
-                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${mobileViewMode === "split" ? "bg-white dark:bg-gray-700 text-[#673ddc] dark:text-white font-bold shadow-xs" : "text-gray-600 dark:text-gray-400"}`}
+                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${mobileViewMode === "split" ? "bg-white dark:bg-[#1a1827] text-[#f43f5e] dark:text-[#fb7185] font-bold shadow-xs" : "text-gray-600 dark:text-gray-400"}`}
                   >
                     Split View
                   </button>
@@ -705,14 +706,14 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
               <div
                 className={`w-full overflow-hidden transition-all ${
                   mobileViewMode === "pip"
-                    ? "relative h-[180px] min-[400px]:h-[210px] sm:h-[250px] md:h-full md:flex md:flex-col md:gap-3"
-                    : "grid grid-cols-2 gap-2 h-[145px] min-[400px]:h-[170px] sm:h-[200px] md:h-full md:flex md:flex-col md:gap-3"
+                    ? "relative h-[180px] min-[400px]:h-[210px] sm:h-[250px] md:h-full md:flex md:flex-col md:gap-2.5"
+                    : "grid grid-cols-2 gap-2 h-[145px] min-[400px]:h-[170px] sm:h-[200px] md:h-full md:flex md:flex-col md:gap-2.5"
                 }`}
               >
                 {/* 1. STRANGER / REMOTE VIDEO CARD */}
                 <div
                   ref={remoteVideoContainerRef}
-                  className="relative w-full h-full min-h-0 md:flex-1 overflow-hidden rounded-2xl border border-gray-200/70 dark:border-white/10 bg-[#161522] flex items-center justify-center shadow-sm select-none"
+                  className="relative w-full h-full md:h-auto md:flex-1 md:basis-0 min-h-0 overflow-hidden rounded-2xl sm:rounded-3xl border border-gray-200/90 dark:border-white/10 bg-[#3f3f46] dark:bg-[#2b2b33] flex items-center justify-center shadow-2xs select-none"
                 >
                   {/* Stranger Reconnecting Grace Period Overlay */}
                   {peerReconnecting && (
@@ -740,31 +741,15 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                     }`}
                   />
 
-                  {/* Remote State: IDLE */}
-                  {chatState === ChatState.IDLE && (
-                    <div className="flex flex-col items-center justify-center p-3 text-center">
-                      <div className="flex h-10 w-10 min-[400px]:h-12 min-[400px]:w-12 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white/5 border border-white/10 text-gray-400 mb-1.5 sm:mb-2.5 shadow-inner">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="sm:w-7 sm:h-7">
-                          <polygon points="23 7 16 12 23 17 23 7" />
-                          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                        </svg>
-                      </div>
-                      <span className="text-[11px] sm:text-xs md:text-sm font-semibold text-gray-300">
-                        Stranger Feed
-                      </span>
-                      <p className="hidden sm:block mt-1 text-[11px] sm:text-xs text-gray-400 max-w-[200px]">
-                        Press <strong className="text-white font-bold">Start</strong> or hit <kbd className="px-1 py-0.5 text-[10px] rounded bg-white/10 text-gray-300 font-mono">Esc</kbd>
-                      </p>
-                    </div>
-                  )}
+                  {/* Remote State: IDLE - Clean charcoal canvas matching reference image */}
 
                   {/* Remote State: SEARCHING (High-tech pulsing radar animation) */}
                   {chatState === ChatState.SEARCHING && (
                     <div className="relative flex flex-col items-center justify-center text-center p-4 z-10">
-                      <div className="relative flex items-center justify-center w-16 h-16 sm:w-22 sm:h-22 mb-2 sm:mb-3">
-                        <div className="absolute inset-0 rounded-full bg-[#673ddc]/20 animate-ping" />
-                        <div className="absolute inset-2 rounded-full bg-[#673ddc]/30 animate-pulse" />
-                        <div className="relative flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-[#673ddc] text-white shadow-lg shadow-[#673ddc]/40">
+                      <div className="relative flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 mb-2 sm:mb-3">
+                        <div className="absolute inset-0 rounded-full bg-rose-500/20 animate-ping" />
+                        <div className="absolute inset-2 rounded-full bg-orange-500/30 animate-pulse" />
+                        <div className="relative flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 text-white shadow-lg shadow-rose-500/30">
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
                             <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                           </svg>
@@ -775,21 +760,21 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                         Looking for a partner...
                       </span>
                       {interests.length > 0 ? (
-                        <div className="mt-1 flex flex-wrap justify-center gap-1 max-w-[190px]">
+                        <div className="mt-1 flex flex-wrap justify-center gap-1 max-w-[240px]">
                           {interests.slice(0, 2).map((tag) => (
-                            <span key={tag} className="text-[10px] text-[#a78bfa] font-medium bg-[#673ddc]/20 px-1.5 py-0.5 rounded-md">
+                            <span key={tag} className="text-[10px] text-rose-200 font-medium bg-rose-500/30 px-1.5 py-0.5 rounded-md">
                               #{tag}
                             </span>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-[11px] text-gray-400 mt-0.5">Connecting worldwide</span>
+                        <span className="text-[11px] text-gray-300 mt-0.5">Connecting worldwide</span>
                       )}
 
                       <button
                         onClick={handleStop}
                         type="button"
-                        className="mt-2.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 text-[10px] sm:text-[11px] font-semibold transition-all cursor-pointer"
+                        className="mt-2.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-gray-200 text-[10px] sm:text-[11px] font-semibold transition-all cursor-pointer"
                       >
                         Cancel
                       </button>
@@ -799,7 +784,7 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                   {/* Remote State: CONNECTED without video track yet */}
                   {chatState === ChatState.CONNECTED && !remoteStreamActive && (
                     <div className="relative flex flex-col items-center justify-center text-center p-4">
-                      <div className="flex h-12 w-12 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-gradient-to-tr from-[#673ddc] to-indigo-500 shadow-lg text-white mb-2 animate-pulse">
+                      <div className="flex h-12 w-12 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 shadow-lg text-white mb-2 animate-pulse">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="sm:w-7 sm:h-7">
                           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                           <circle cx="12" cy="7" r="4" />
@@ -808,9 +793,9 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                       <div className="flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white backdrop-blur-xs">
                         <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                         <span className="font-semibold">Stranger</span>
-                        <span className="text-gray-300 font-mono">({formatTimer(matchDuration)})</span>
+                        <span className="text-gray-300 font-mono text-[9px] sm:text-[10px]">({formatTimer(matchDuration)})</span>
                       </div>
-                      <span className="text-[11px] text-gray-400 mt-1">Connecting video...</span>
+                      <span className="text-[11px] text-gray-300 mt-1">Connecting video...</span>
                     </div>
                   )}
 
@@ -828,7 +813,7 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                       <button
                         onClick={handleNext}
                         type="button"
-                        className="mt-2.5 inline-flex items-center gap-1 rounded-xl bg-[#673ddc] px-3 py-1.5 text-xs font-bold text-white shadow-md hover:bg-[#5b34c9] active:scale-95 transition-all cursor-pointer"
+                        className="mt-2.5 inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 px-3 py-1.5 text-xs font-bold text-white shadow-md shadow-rose-500/20 hover:brightness-105 active:scale-95 transition-all cursor-pointer"
                       >
                         <span>Next Stranger</span>
                         <kbd className="px-1 text-[10px] rounded bg-white/20 font-mono">Esc</kbd>
@@ -836,76 +821,56 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                     </div>
                   )}
 
-                  {/* TOP OVERLAY BAR: Status pill + Shared interest tag */}
-                  <div className="absolute top-2 left-2 sm:top-2.5 sm:left-3 right-2 sm:right-3 flex items-center justify-between pointer-events-none z-20">
-                    {chatState === ChatState.CONNECTED ? (
-                      <div className="flex items-center gap-1.5 rounded-full bg-black/60 backdrop-blur-md px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-xs text-white border border-white/10 shadow-xs pointer-events-auto">
-                        <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-green-500 animate-pulse" />
-                        <span className="font-semibold">Stranger</span>
-                        <span className="text-gray-300 font-mono text-[9px] sm:text-[10px]">
-                          {formatTimer(matchDuration)}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 rounded-full bg-black/50 backdrop-blur-xs px-2 py-0.5 text-[9px] sm:text-[10px] text-gray-300 border border-white/5">
-                        <span>Stranger Feed</span>
-                      </div>
-                    )}
-
-                    {sharedInterest && chatState === ChatState.CONNECTED && (
-                      <span className="rounded-full bg-[#673ddc]/90 backdrop-blur-md px-2 py-0.5 text-[9px] sm:text-[10px] font-bold text-white shadow-xs border border-white/20">
-                        #{sharedInterest}
+                  {/* Connected Status Overlay Pill (Top-left when connected) */}
+                  {chatState === ChatState.CONNECTED && (
+                    <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 flex items-center gap-1.5 rounded-full bg-black/60 backdrop-blur-md px-2.5 py-1 text-[10px] sm:text-xs text-white border border-white/10 shadow-xs z-20 pointer-events-auto">
+                      <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-green-500 animate-pulse" />
+                      <span className="font-semibold">Stranger</span>
+                      <span className="text-gray-300 font-mono text-[9px] sm:text-[10px]">
+                        {formatTimer(matchDuration)}
                       </span>
-                    )}
-
-                    {/* Report user flag button */}
-                    {chatState === ChatState.CONNECTED && (
-                      <button
-                        onClick={() => setShowReportModal(true)}
-                        type="button"
-                        className="pointer-events-auto flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full bg-black/60 backdrop-blur-md text-gray-300 hover:text-red-400 hover:bg-black/80 transition-colors border border-white/10 cursor-pointer"
-                        title="Report Stranger"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sm:w-3.5 sm:h-3.5">
-                          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-                          <line x1="4" y1="22" x2="4" y2="15" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-
-                  {/* BOTTOM OVERLAY BAR: Watermark + Fullscreen toggle */}
-                  <div className="absolute bottom-2 left-2 sm:bottom-2.5 sm:left-3 right-2 sm:right-3 flex items-center justify-between select-none pointer-events-none z-20">
-                    <div className="flex items-center gap-1 bg-black/40 backdrop-blur-xs px-1.5 py-0.5 rounded-md border border-white/5">
-                      <div className="flex h-3 w-3 sm:h-3.5 sm:w-3.5 items-center justify-center rounded-xs bg-[#673ddc]">
-                        <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-                          <path d="M20 11.5C20 15.6421 16.4183 19 12 19C10.6387 19 9.35517 18.6833 8.22557 18.1251L4 19.5L5.37488 15.7744C4.50294 14.5262 4 13.0762 4 11.5C4 7.35786 7.58172 4 12 4C16.4183 4 20 7.35786 20 11.5Z" />
-                        </svg>
-                      </div>
-                      <span className="text-[9px] sm:text-[10px] font-extrabold text-white tracking-wide">
-                        umingle<span className="text-gray-300 font-normal">.com</span>
-                      </span>
+                      {sharedInterest && (
+                        <span className="ml-1 text-amber-300 font-bold">#{sharedInterest}</span>
+                      )}
                     </div>
+                  )}
 
-                    <button
-                      onClick={toggleFullscreen}
-                      type="button"
-                      className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-md bg-black/40 hover:bg-black/70 text-gray-300 hover:text-white transition-colors cursor-pointer"
-                      title="Toggle Fullscreen"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-                      </svg>
-                    </button>
+                  {/* BOTTOM-LEFT WATERMARK: V Mingle Branding */}
+                  <div className="absolute bottom-2.5 left-2.5 sm:bottom-3 sm:left-3 flex items-center gap-1.5 select-none pointer-events-none z-20">
+                    <div className="flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center rounded-md bg-white p-0.5 shadow-xs overflow-hidden">
+                      <img
+                        src="/favicon.png"
+                        alt="V Mingle"
+                        className="h-full w-full object-contain"
+                      />
+                    </div>
+                    <span className="text-xs sm:text-sm font-black text-white tracking-tight drop-shadow-xs">
+                      vmingle<span className="font-normal opacity-85">.com</span>
+                    </span>
                   </div>
+
+                  {/* BOTTOM-RIGHT FLAG (Report user): Exact match to reference screenshot */}
+                  <button
+                    onClick={() => setShowReportModal(true)}
+                    type="button"
+                    className="absolute bottom-2.5 right-2.5 sm:bottom-3 sm:right-3 flex h-6 w-6 items-center justify-center text-gray-400 hover:text-white transition-colors cursor-pointer z-20"
+                    title="Report user"
+                    aria-label="Report user"
+                    id="report-flag-btn"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                      <line x1="4" y1="22" x2="4" y2="15" />
+                    </svg>
+                  </button>
                 </div>
 
                 {/* 2. LOCAL SELF VIDEO CARD (Picture-in-Picture on mobile or stacked on desktop) */}
                 <div
-                  className={`overflow-hidden border border-gray-200/70 dark:border-white/10 bg-[#0e0d16] flex items-center justify-center shadow-sm select-none transition-all ${
+                  className={`group overflow-hidden rounded-2xl sm:rounded-3xl border border-gray-200/90 dark:border-white/10 bg-[#12111a] flex items-center justify-center shadow-2xs select-none transition-all ${
                     mobileViewMode === "pip"
-                      ? "absolute bottom-2 right-2 w-24 h-32 min-[400px]:w-28 min-[400px]:h-36 sm:w-32 sm:h-40 rounded-xl z-30 shadow-xl ring-2 ring-black/50 md:relative md:bottom-auto md:right-auto md:w-full md:h-full md:min-h-0 md:flex-1 md:rounded-2xl md:ring-0"
-                      : "relative w-full h-full min-h-0 md:flex-1 rounded-2xl"
+                      ? "absolute bottom-2 right-2 w-24 h-32 min-[400px]:w-28 min-[400px]:h-36 sm:w-32 sm:h-40 rounded-xl z-30 shadow-xl ring-2 ring-black/50 md:relative md:bottom-auto md:right-auto md:w-full md:h-auto md:flex-1 md:basis-0 md:min-h-0 md:rounded-2xl sm:md:rounded-3xl md:ring-0"
+                      : "relative w-full h-full md:h-auto md:flex-1 md:basis-0 min-h-0 rounded-2xl sm:rounded-3xl"
                   }`}
                 >
                   {/* Mirrored Local Video Element */}
@@ -932,7 +897,7 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
 
                   {/* Camera Permission State: Denied or Not Working */}
                   {cameraStatus === "denied" && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950 p-2 text-center">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c] p-2 text-center">
                       <div className="flex h-7 w-7 items-center justify-center rounded-full bg-red-500/20 text-red-400 mb-1">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <line x1="1" y1="1" x2="23" y2="23" />
@@ -950,14 +915,8 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                     </div>
                   )}
 
-                  {/* Top-left "You" badge */}
-                  <div className="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-xs px-1.5 py-0.5 text-[9px] text-white border border-white/10">
-                    <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
-                    <span className="font-semibold">You</span>
-                  </div>
-
-                  {/* Floating Local Media Controls Toolbar */}
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 border border-white/10 shadow-lg">
+                  {/* Subtle Floating Local Media Controls Toolbar (Revealed on hover) */}
+                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 border border-white/10 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                     {/* Toggle Microphone */}
                     <button
                       onClick={toggleAudio}
@@ -1032,196 +991,84 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
           )}
 
           {/* ================================================================= */}
+          {/* ================================================================= */}
           {/* RIGHT COLUMN: Chat Stream, Guidelines, & Bottom Action Bar       */}
           {/* ================================================================= */}
           <div className="flex flex-1 min-w-0 min-h-0 flex-col gap-2.5 sm:gap-3 h-full overflow-hidden">
             
-            {/* Top Status Bar: Mode + Connection Status + Interests Trigger */}
-            <div className="shrink-0 flex items-center justify-between px-1">
-              <div className="flex items-center gap-2">
-                <span className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-[#18181b] dark:text-white">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-[#673ddc]/10 text-[#673ddc] dark:bg-[#673ddc]/20 dark:text-[#a78bfa]">
-                    {mode === "video" ? (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <polygon points="23 7 16 12 23 17 23 7" />
-                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                      </svg>
-                    ) : (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                      </svg>
-                    )}
-                  </span>
-                  {mode === "video" ? "Video Chat" : "Text Chat"}
-                </span>
-
-                <span className="text-gray-300 dark:text-gray-700">•</span>
-
-                {chatState === ChatState.IDLE && (
-                  <span className="text-xs text-gray-500 dark:text-gray-400">Ready to connect</span>
-                )}
-                {chatState === ChatState.SEARCHING && (
-                  <span className="text-xs font-semibold text-[#673ddc] dark:text-[#a78bfa] flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#673ddc] animate-ping" />
-                    Searching queue...
-                  </span>
-                )}
-                {chatState === ChatState.CONNECTED && (
-                  <span className="text-xs font-semibold text-green-600 dark:text-green-400 flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                    Live Match ({formatTimer(matchDuration)})
-                  </span>
-                )}
-                {chatState === ChatState.ENDED && (
-                  <span className="text-xs text-gray-500 dark:text-gray-400">Chat Ended</span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                {/* Safe Anonymous Session Badge */}
-                <div
-                  className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-gray-200/90 dark:border-white/10 bg-gray-50 dark:bg-[#161522] px-2.5 py-1 text-[11px] font-medium text-gray-600 dark:text-gray-400 select-none shadow-2xs"
-                  title="Privacy-safe anonymous session. Zero biometrics or personal tracking."
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>
-                    Session:{" "}
-                    <span className="font-mono text-[10px] text-gray-800 dark:text-gray-200">
-                      {session?.sessionId
-                        ? `${session.sessionId.replace("sess_", "").substring(0, 8)}...`
-                        : "Connecting"}
-                    </span>
-                  </span>
-                </div>
-
-                {/* Interests Quick-Tag Pill */}
-                <button
-                  type="button"
-                  onClick={() => setShowInterestsModal(true)}
-                  className="flex items-center gap-1.5 rounded-full border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#161522] px-2.5 py-1 text-[11px] font-semibold text-gray-700 dark:text-gray-300 hover:border-[#673ddc] hover:text-[#673ddc] transition-colors cursor-pointer shadow-2xs"
-                >
-                  <span>🏷️</span>
-                  <span>{interests.length > 0 ? `${interests.length} Interests` : "Add Interests"}</span>
-                  <span className="text-[10px] text-gray-400">✏️</span>
-                </button>
-              </div>
-            </div>
-
             {/* Main Content Pane (Welcome Rules Card OR Live Chat Messages) */}
-            <div className="relative flex-1 min-h-0 overflow-y-auto rounded-2xl border border-gray-200/80 bg-white p-3.5 sm:p-5 lg:p-6 shadow-xs dark:border-white/10 dark:bg-[#151421]">
+            <div className="relative flex-1 min-h-0 overflow-y-auto rounded-2xl sm:rounded-3xl border border-gray-200/90 bg-white p-6 sm:p-8 lg:p-10 shadow-2xs dark:border-white/10 dark:bg-[#151421]">
               
               {chatState === ChatState.IDLE ? (
                 /* ======================================================= */
-                /* POLISHED WELCOME & GUIDELINES HERO CARD                 */
+                /* WELCOME & RULES HERO CARD - EXACT MATCH TO REFERENCE    */
                 /* ======================================================= */
-                <div className="flex flex-col h-full justify-between gap-3 sm:gap-4 max-w-2xl mx-auto">
-                  <div className="space-y-3 sm:space-y-4">
-                    {/* Header Banner */}
-                    <div className="flex items-start gap-2.5 sm:gap-3">
-                      <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-[#673ddc] to-indigo-500 text-white shadow-md shadow-[#673ddc]/30">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="sm:w-5 sm:h-5">
-                          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h2 className="text-lg sm:text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white">
-                          Welcome to Umingle
-                        </h2>
-                        <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                          Instant, anonymous 1-on-1 random video chat. Please adhere to the safety guidelines.
-                        </p>
-                      </div>
-                    </div>
+                <div className="flex flex-col h-full justify-between select-none">
+                  <div>
+                    {/* Header */}
+                    <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+                      Welcome to V Mingle.
+                    </h2>
 
-                    {/* Guidelines 2x2 Grid */}
-                    <div className="grid grid-cols-1 min-[440px]:grid-cols-2 gap-2 sm:gap-2.5">
-                      <div className="flex items-start gap-2 rounded-xl border border-red-200/70 bg-red-50/50 dark:border-red-900/30 dark:bg-red-950/20 p-2 sm:p-2.5">
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-red-500 text-[10px] font-extrabold text-white">
+                    {/* Guidelines List */}
+                    <div className="mt-5 sm:mt-6 space-y-2.5 sm:space-y-3 text-base sm:text-lg">
+                      {/* Age restriction line */}
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center justify-center bg-[#ff3b30] text-white text-xs font-black px-1.5 py-0.5 rounded shadow-2xs">
                           18+
                         </span>
-                        <div>
-                          <div className="text-xs font-bold text-red-900 dark:text-red-300">Adults Only</div>
-                          <div className="text-[10px] sm:text-[11px] text-red-700 dark:text-red-400">Strictly 18 years or older.</div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-2 rounded-xl border border-purple-200/70 bg-purple-50/50 dark:border-purple-900/30 dark:bg-purple-950/20 p-2 sm:p-2.5">
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[#673ddc] text-[11px] text-white">
-                          🛡️
+                        <span className="text-[#f43f5e] dark:text-[#fb7185] font-bold text-base sm:text-lg">
+                          You must be 18 or older
                         </span>
-                        <div>
-                          <div className="text-xs font-bold text-purple-900 dark:text-purple-300">Zero Tolerance</div>
-                          <div className="text-[10px] sm:text-[11px] text-purple-700 dark:text-purple-400">No nudity or harassment.</div>
-                        </div>
                       </div>
 
-                      <div className="flex items-start gap-2 rounded-xl border border-blue-200/70 bg-blue-50/50 dark:border-blue-900/30 dark:bg-blue-950/20 p-2 sm:p-2.5">
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-blue-600 text-[11px] text-white">
-                          📹
-                        </span>
-                        <div>
-                          <div className="text-xs font-bold text-blue-900 dark:text-blue-300">Live Video Required</div>
-                          <div className="text-[10px] sm:text-[11px] text-blue-700 dark:text-blue-400">Camera on, face clearly visible.</div>
-                        </div>
-                      </div>
+                      <p className="text-gray-900 dark:text-gray-100 font-medium">
+                        No nudity, hate speech, or harassment
+                      </p>
 
-                      <div className="flex items-start gap-2 rounded-xl border border-emerald-200/70 bg-emerald-50/50 dark:border-emerald-900/30 dark:bg-emerald-950/20 p-2 sm:p-2.5">
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-emerald-600 text-[11px] text-white">
-                          🔒
-                        </span>
-                        <div>
-                          <div className="text-xs font-bold text-emerald-900 dark:text-emerald-300">100% Anonymous</div>
-                          <div className="text-[10px] sm:text-[11px] text-emerald-700 dark:text-emerald-400">Encrypted WebRTC peer connection.</div>
-                        </div>
-                      </div>
-                    </div>
+                      <p className="text-gray-900 dark:text-gray-100 font-medium">
+                        Your camera must show you, live
+                      </p>
 
-                    {/* Active Interests Showcase */}
-                    <div className="rounded-xl border border-gray-200/70 bg-gray-50/80 dark:border-white/5 dark:bg-white/5 p-2.5 sm:p-3">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
-                          <span>🎯</span> Matching Interests:
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowInterestsModal(true)}
-                          className="text-[11px] font-semibold text-[#673ddc] dark:text-[#a78bfa] hover:underline cursor-pointer"
-                        >
-                          + Edit Tags
-                        </button>
-                      </div>
+                      <p className="text-gray-900 dark:text-gray-100 font-medium">
+                        Do not ask for gender — this is not a dating site
+                      </p>
 
-                      {interests.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {interests.map((tag) => (
-                            <span
-                              key={tag}
-                              className="inline-flex items-center gap-1 rounded-md bg-white dark:bg-[#1e1d2c] border border-gray-200 dark:border-gray-700 px-2 py-0.5 text-xs font-medium text-gray-800 dark:text-gray-200 shadow-2xs"
-                            >
-                              <span>#{tag}</span>
-                              <button
-                                onClick={() => handleRemoveInterest(tag)}
-                                className="text-gray-400 hover:text-red-500 cursor-pointer text-[10px]"
-                                title="Remove tag"
-                              >
-                                ✕
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          No interests added yet. You&apos;ll be matched randomly with anyone online!
-                        </p>
-                      )}
+                      <p className="font-extrabold text-gray-900 dark:text-white">
+                        Violators will be banned
+                      </p>
                     </div>
                   </div>
-
-                  {/* Ready Callout */}
-                  <div className="text-center pt-1.5 border-t border-gray-100 dark:border-white/5">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      Click <strong className="text-[#673ddc] dark:text-[#a78bfa] font-bold">Start</strong> below or press <kbd className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-[10px] sm:text-[11px] font-mono text-gray-700 dark:text-gray-300">Esc</kbd> on your keyboard.
+                </div>
+              ) : chatState === ChatState.SEARCHING && messages.filter((m) => m.sender !== "system").length === 0 ? (
+                /* ======================================================= */
+                /* HIGH-TECH MATCHMAKING RADAR STATE                       */
+                /* ======================================================= */
+                <div className="flex flex-col items-center justify-center h-full text-center p-6 space-y-4">
+                  <div className="relative flex items-center justify-center w-20 h-20 sm:w-24 sm:h-24">
+                    <div className="absolute inset-0 rounded-full bg-rose-500/15 animate-ping" />
+                    <div className="absolute inset-2 rounded-full bg-orange-500/25 animate-pulse" />
+                    <div className="relative flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 text-white shadow-xl shadow-rose-500/30">
+                      <svg className="animate-spin h-6 w-6 sm:h-7 sm:w-7" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
+                      Looking for someone to chat with...
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
+                      {interests.length > 0
+                        ? `Searching for strangers interested in #${interests.join(", #")}...`
+                        : "Matching you randomly with someone online. Hold on tight!"}
                     </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 font-mono">
+                    <span>Press</span>
+                    <kbd className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-bold">Esc</kbd>
+                    <span>or click Stop to cancel</span>
                   </div>
                 </div>
               ) : (
@@ -1257,7 +1104,7 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                         <div
                           className={`max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-xs break-words ${
                             isYou
-                              ? "bg-gradient-to-tr from-[#673ddc] to-[#7c4dff] text-white rounded-br-xs"
+                              ? "bg-gradient-to-tr from-orange-400 via-rose-500 to-pink-500 text-white rounded-br-xs"
                               : "bg-gray-100 text-[#18181b] dark:bg-[#201f30] dark:text-gray-100 rounded-bl-xs border border-gray-200/60 dark:border-white/5"
                           }`}
                         >
@@ -1266,6 +1113,26 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                       </div>
                     );
                   })}
+
+                  {/* End of Chat Callout Card */}
+                  {chatState === ChatState.ENDED && (
+                    <div className="my-4 p-5 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-200/80 dark:border-white/10 text-center space-y-2.5 animate-fade-in">
+                      <div className="text-2xl">👋</div>
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">Stranger has disconnected</h4>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
+                        Your chat ended {matchDuration > 0 ? `after ${formatTimer(matchDuration)}` : ""}. Click below to meet someone new!
+                      </p>
+                      <button
+                        onClick={handleNext}
+                        type="button"
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white text-xs font-extrabold shadow-md shadow-rose-500/25 transition-all cursor-pointer"
+                      >
+                        <span>Find New Stranger</span>
+                        <kbd className="px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono">Esc</kbd>
+                      </button>
+                    </div>
+                  )}
+
                   <div ref={messagesEndRef} />
                 </div>
               )}
@@ -1280,7 +1147,7 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                     key={icebreaker}
                     type="button"
                     onClick={() => sendMessage(undefined, icebreaker)}
-                    className="shrink-0 rounded-full border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#161522] px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 hover:border-[#673ddc] hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer shadow-2xs"
+                    className="shrink-0 rounded-full border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#161522] px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 hover:border-rose-400 hover:bg-rose-50/50 dark:hover:bg-gray-800 transition-colors cursor-pointer shadow-2xs"
                   >
                     {icebreaker}
                   </button>
@@ -1289,19 +1156,57 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
             )}
 
             {/* =========================================================== */}
+            {/* MIDDLE ROW: SMART MATCH & GET PREMIUM PILLS                 */}
+            {/* =========================================================== */}
+            <div className="flex items-center gap-2.5 shrink-0 px-0.5">
+              {/* Smart Match Pill */}
+              <button
+                type="button"
+                onClick={() => setShowInterestsModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white hover:bg-gray-50 dark:bg-[#181726] dark:hover:bg-[#201e32] border border-gray-200/90 dark:border-white/10 px-3.5 py-1.5 text-xs font-semibold text-gray-800 dark:text-gray-200 transition-colors cursor-pointer shadow-2xs"
+                id="smart-match-btn"
+              >
+                <span>🌍</span>
+                <span>{interests.length > 0 ? `Smart Match (${interests.length})` : "Smart Match"}</span>
+                <span className="text-[10px] text-gray-500">▾</span>
+              </button>
+
+              {/* Get Premium Pill */}
+              <button
+                type="button"
+                onClick={() => setShowPremiumModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:brightness-105 active:scale-95 px-4 py-1.5 text-xs font-bold text-white transition-all cursor-pointer shadow-2xs shadow-orange-500/20"
+                id="get-premium-btn"
+              >
+                <span>⚡</span>
+                <span>Get Premium</span>
+              </button>
+            </div>
+
+            {/* =========================================================== */}
             {/* BOTTOM ACTION ROW: Start/Stop/Next Buttons + Text Input      */}
             {/* =========================================================== */}
             <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
               
-              {/* PRIMARY ACTION BUTTON: Start or (Stop + Next) */}
+              {/* PRIMARY ACTION BUTTONS (Context-Aware by State) */}
               {chatState === ChatState.IDLE ? (
                 <button
                   onClick={startChat}
                   type="button"
-                  className="flex h-[52px] sm:h-[56px] w-[80px] sm:w-[95px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-tr from-[#673ddc] to-[#7b4eed] text-white shadow-md shadow-[#673ddc]/30 hover:brightness-105 active:scale-95 transition-all cursor-pointer"
+                  className="flex h-[52px] sm:h-[56px] w-[80px] sm:w-[95px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
                   id="chat-start-btn"
                 >
                   <span className="text-base font-extrabold tracking-wide leading-tight">Start</span>
+                  <span className="text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
+                </button>
+              ) : chatState === ChatState.ENDED ? (
+                <button
+                  onClick={handleNext}
+                  type="button"
+                  className="flex h-[52px] sm:h-[56px] w-[80px] sm:w-[95px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
+                  id="chat-new-btn"
+                >
+                  <span className="text-base font-extrabold tracking-wide leading-tight">New</span>
                   <span className="text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
                 </button>
               ) : (
@@ -1323,16 +1228,18 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                     <span className="text-[10px] opacity-80 leading-none mt-0.5 font-mono">Esc</span>
                   </button>
 
-                  {/* Next Button */}
-                  <button
-                    onClick={handleNext}
-                    type="button"
-                    className="flex h-[52px] sm:h-[56px] w-[65px] min-[380px]:w-[72px] sm:w-[84px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-tr from-[#673ddc] to-[#7b4eed] text-white shadow-md shadow-[#673ddc]/30 hover:brightness-105 active:scale-95 transition-all cursor-pointer"
-                    id="chat-next-btn"
-                  >
-                    <span className="text-xs sm:text-sm font-extrabold leading-tight">Next</span>
-                    <span className="text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
-                  </button>
+                  {/* Next Button (Only when connected) */}
+                  {chatState === ChatState.CONNECTED && (
+                    <button
+                      onClick={handleNext}
+                      type="button"
+                      className="flex h-[52px] sm:h-[56px] w-[65px] min-[380px]:w-[72px] sm:w-[84px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
+                      id="chat-next-btn"
+                    >
+                      <span className="text-xs sm:text-sm font-extrabold leading-tight">Next</span>
+                      <span className="text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -1347,30 +1254,20 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                       ? "Type a message to stranger..."
                       : chatState === ChatState.SEARCHING
                       ? "Waiting for a partner..."
-                      : "Start a chat to send messages..."
+                      : ""
                   }
                   disabled={chatState !== ChatState.CONNECTED}
-                  className="h-[52px] sm:h-[56px] w-full rounded-2xl border border-gray-200/90 bg-white pl-4 pr-12 text-sm sm:text-base text-gray-900 placeholder-gray-400 shadow-2xs outline-none transition-all focus:border-[#673ddc] focus:ring-2 focus:ring-[#673ddc]/20 disabled:bg-gray-100 disabled:text-gray-400 dark:border-white/10 dark:bg-[#151421] dark:text-gray-100 dark:disabled:bg-gray-900/60"
+                  className="h-[52px] sm:h-[56px] w-full rounded-2xl border border-gray-200/90 bg-white pl-4 pr-12 text-sm sm:text-base text-gray-900 placeholder-gray-400 shadow-2xs outline-none transition-all focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 disabled:bg-white dark:disabled:bg-[#151421] dark:border-white/10 dark:bg-[#151421] dark:text-gray-100"
                 />
 
                 <button
                   type="submit"
                   disabled={!inputMessage.trim() || chatState !== ChatState.CONNECTED}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl bg-[#673ddc] text-white transition-all disabled:opacity-20 disabled:bg-gray-300 dark:disabled:bg-gray-700 hover:brightness-110 active:scale-95 cursor-pointer shadow-xs"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-[#f43f5e] transition-colors cursor-pointer disabled:opacity-35"
                   title="Send Message"
                 >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                   </svg>
                 </button>
               </form>
@@ -1397,7 +1294,7 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                   Report Stranger
                 </h3>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Help keep Umingle safe. Why are you reporting this user?
+                  Help keep V Mingle safe. Why are you reporting this user?
                 </p>
               </div>
             </div>
@@ -1414,7 +1311,7 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                   key={item.reason}
                   className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm font-medium transition-colors ${
                     selectedReportReason === item.reason
-                      ? "border-[#673ddc] bg-[#673ddc]/5 text-[#673ddc] dark:bg-[#673ddc]/10 dark:text-[#a78bfa]"
+                      ? "border-rose-400 bg-rose-50 text-[#f43f5e] dark:bg-rose-950/20 dark:text-rose-300"
                       : "border-gray-200 hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5"
                   }`}
                 >
@@ -1424,7 +1321,7 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                     value={item.reason}
                     checked={selectedReportReason === item.reason}
                     onChange={() => setSelectedReportReason(item.reason)}
-                    className="accent-[#673ddc]"
+                    className="accent-[#f43f5e]"
                   />
                   <span>{item.label}</span>
                 </label>
@@ -1484,11 +1381,11 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                 value={interestInput}
                 onChange={(e) => setInterestInput(e.target.value)}
                 placeholder="e.g. music, coding, anime"
-                className="h-11 flex-1 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#111019] px-3.5 text-sm text-gray-900 dark:text-white outline-none focus:border-[#673ddc] focus:ring-2 focus:ring-[#673ddc]/20 transition-all"
+                className="h-11 flex-1 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#111019] px-3.5 text-sm text-gray-900 dark:text-white outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 transition-all"
               />
               <button
                 type="submit"
-                className="h-11 rounded-xl bg-[#673ddc] px-4 text-xs font-bold text-white shadow-sm hover:brightness-105 active:scale-95 transition-all cursor-pointer shrink-0"
+                className="h-11 rounded-xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 px-4 text-xs font-bold text-white shadow-sm hover:brightness-105 active:scale-95 transition-all cursor-pointer shrink-0"
               >
                 Add Tag
               </button>
@@ -1499,13 +1396,13 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
                 interests.map((tag) => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200/60 dark:border-purple-800/40 px-3 py-1 text-xs font-semibold text-[#673ddc] dark:text-[#a78bfa]"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-800/40 px-3 py-1 text-xs font-semibold text-[#f43f5e] dark:text-rose-300"
                   >
                     <span>#{tag}</span>
                     <button
                       onClick={() => handleRemoveInterest(tag)}
                       type="button"
-                      className="text-purple-400 hover:text-red-500 cursor-pointer font-bold text-xs"
+                      className="text-rose-400 hover:text-red-500 cursor-pointer font-bold text-xs"
                       title="Remove tag"
                     >
                       ✕
@@ -1521,9 +1418,71 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
               <button
                 type="button"
                 onClick={() => setShowInterestsModal(false)}
-                className="rounded-xl bg-[#673ddc] px-6 py-2.5 text-sm font-bold text-white shadow-md hover:brightness-105 active:scale-95 transition-all cursor-pointer"
+                className="rounded-xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 px-6 py-2.5 text-sm font-bold text-white shadow-md hover:brightness-105 active:scale-95 transition-all cursor-pointer"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* PREMIUM MODAL                                                       */}
+      {/* =================================================================== */}
+      {showPremiumModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 text-white shadow-md shadow-rose-500/25">
+                  <span className="text-lg">⚡</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">V Mingle Premium</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Unlock supercharged matchmaking</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPremiumModal(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-gray-700 dark:hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <div className="flex items-start gap-3 p-3 rounded-2xl bg-orange-50/70 dark:bg-orange-950/20 border border-orange-100 dark:border-orange-900/30">
+                <span className="text-base">🚀</span>
+                <div>
+                  <div className="text-xs font-bold text-orange-950 dark:text-orange-200">Zero Wait Queue</div>
+                  <div className="text-[11px] text-orange-800/80 dark:text-orange-300/80">Instant priority matching ahead of standard queue.</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 p-3 rounded-2xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30">
+                <span className="text-base">📹</span>
+                <div>
+                  <div className="text-xs font-bold text-rose-950 dark:text-rose-200">Crystal Clear HD Video</div>
+                  <div className="text-[11px] text-rose-800/80 dark:text-rose-300/80">Stream in 1080p 60fps with optimized WebRTC bitrate.</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 p-3 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30">
+                <span className="text-base">🎯</span>
+                <div>
+                  <div className="text-xs font-bold text-amber-950 dark:text-amber-200">Unlimited Smart Match Filters</div>
+                  <div className="text-[11px] text-amber-800/80 dark:text-amber-300/80">Filter partners by verified interests and topics.</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-between pt-3 border-t border-gray-100 dark:border-white/5">
+              <span className="text-xs font-semibold text-gray-500">Free preview available</span>
+              <button
+                type="button"
+                onClick={() => setShowPremiumModal(false)}
+                className="rounded-xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:brightness-105 active:scale-95 transition-all cursor-pointer"
+              >
+                Got it
               </button>
             </div>
           </div>

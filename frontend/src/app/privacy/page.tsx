@@ -4,8 +4,17 @@ import Link from "next/link";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — Umingle",
-  description: "Learn how Umingle protects your privacy with anonymous-first architecture, zero biometrics, and peer-to-peer encrypted video chat.",
+  title: "Privacy Policy",
+  description:
+    "Learn how V Mingle protects your privacy with anonymous-first architecture, zero biometrics, and peer-to-peer encrypted random video chat.",
+  alternates: {
+    canonical: "/privacy",
+  },
+  openGraph: {
+    title: "Privacy Policy — V Mingle",
+    description: "Learn how V Mingle protects your privacy with anonymous-first architecture.",
+    url: "/privacy",
+  },
 };
 
 export default function PrivacyPage() {
@@ -13,13 +22,13 @@ export default function PrivacyPage() {
     {
       title: "Zero Biometrics & No Facial Recognition",
       description:
-        "Umingle does not analyze, scan, classify, or store facial geometries, biometrics, gender identity, or demographic data. Your video feed is yours alone and is never processed by facial classification algorithms.",
+        "V Mingle does not analyze, scan, classify, or store facial geometries, biometrics, gender identity, or demographic data. Your video feed is yours alone and is never processed by facial classification algorithms.",
       icon: "👁️‍🗨️",
     },
     {
       title: "No User Accounts or Profile Tracking",
       description:
-        "We believe the best privacy guarantee is not collecting your data in the first place. You do not need to register, provide an email, connect a social account, or create a password to use Umingle.",
+        "We believe the best privacy guarantee is not collecting your data in the first place. You do not need to register, provide an email, connect a social account, or create a password to use V Mingle.",
       icon: "👤",
     },
     {
@@ -40,7 +49,7 @@ export default function PrivacyPage() {
     {
       title: "1. Information We Do NOT Collect",
       content:
-        "Unlike conventional social media and video platforms, Umingle intentionally avoids collecting personal identifying information (PII). We do NOT collect or store: \n• Your name, address, email address, or phone number\n• Biometric data, facial feature coordinates, or gender categorization\n• Contacts, address books, or external social media profiles\n• Continuous browsing habits across other websites",
+        "Unlike conventional social media and video platforms, V Mingle intentionally avoids collecting personal identifying information (PII). We do NOT collect or store: \n• Your name, address, email address, or phone number\n• Biometric data, facial feature coordinates, or gender categorization\n• Contacts, address books, or external social media profiles\n• Continuous browsing habits across other websites",
     },
     {
       title: "2. Technical Data Processed for Connection & Safety",
@@ -50,7 +59,7 @@ export default function PrivacyPage() {
     {
       title: "3. Direct Peer-to-Peer Communication (WebRTC)",
       content:
-        "Real-time video and audio feeds travel directly between you and your chat partner via standard WebRTC peer connections. These media streams are encrypted end-to-end between browsers using DTLS-SRTP protocols. Umingle does not record, archive, or sell any video or audio streams.",
+        "Real-time video and audio feeds travel directly between you and your chat partner via standard WebRTC peer connections. These media streams are encrypted end-to-end between browsers using DTLS-SRTP protocols. V Mingle does not record, archive, or sell any video or audio streams.",
     },
     {
       title: "4. User Reports & Moderation Safety",
@@ -60,22 +69,22 @@ export default function PrivacyPage() {
     {
       title: "5. Cookies & Local Browser Storage",
       content:
-        "We do not use tracking cookies, retargeting pixels, or third-party advertising cookies. We only use functional session storage and a secure HttpOnly session cookie (umingle_sess) to preserve continuity during an active chat session. You can clear this data at any time by closing your browser tab or clearing browser cache.",
+        "We do not use tracking cookies, retargeting pixels, or third-party advertising cookies. We only use functional session storage and a secure HttpOnly session cookie (vmingle_sess) to preserve continuity during an active chat session. You can clear this data at any time by closing your browser tab or clearing browser cache.",
     },
     {
       title: "6. Children's Privacy (Under 18 Notice)",
       content:
-        "Umingle is strictly intended for individuals 18 years of age or older. We do not knowingly solicit or collect information from children. If we become aware that a minor has accessed the platform, we take immediate measures to terminate their access.",
+        "V Mingle is strictly intended for individuals 18 years of age or older. We do not knowingly solicit or collect information from children. If we become aware that a minor has accessed the platform, we take immediate measures to terminate their access.",
     },
     {
       title: "7. Contact & Inquiries",
       content:
-        "If you have questions regarding this Privacy Policy or our anonymous safety framework, please review our Community Rules or reach out to our administration team.",
+        "If you have questions regarding this Privacy Policy or our anonymous safety framework, please review our Community Rules or reach out to our administration team via our Contact page.",
     },
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f6f6f9] text-[#18181b] dark:bg-[#0c0b12] dark:text-[#f4f4f7] transition-colors">
+    <div className="flex min-h-screen flex-col bg-[#fdfbf7] text-[#111827] dark:bg-[#121016] dark:text-[#f4f4f7] transition-colors">
       <Header />
 
       <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
@@ -83,7 +92,7 @@ export default function PrivacyPage() {
         <div className="mb-6">
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#673ddc] hover:underline"
+            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#f43f5e] hover:underline"
           >
             ← Back to Home
           </Link>
@@ -91,7 +100,7 @@ export default function PrivacyPage() {
 
         {/* Page Header */}
         <div className="mb-8 sm:mb-12 border-b border-gray-200/80 dark:border-white/10 pb-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 text-xs font-bold mb-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/10 text-[#f43f5e] dark:bg-rose-500/20 dark:text-rose-300 text-xs font-bold mb-3">
             <span>🛡️</span> Privacy-First Architecture
           </div>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight">
@@ -138,14 +147,14 @@ export default function PrivacyPage() {
         </div>
 
         {/* Quick Links */}
-        <div className="mt-10 p-5 rounded-2xl bg-[#673ddc]/5 dark:bg-[#673ddc]/10 border border-[#673ddc]/20 text-center">
+        <div className="mt-10 p-5 rounded-2xl bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/20 text-center">
           <p className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">
             Learn more about our standards on the{" "}
-            <Link href="/rules" className="text-[#673ddc] dark:text-[#a78bfa] font-bold hover:underline">
+            <Link href="/rules" className="text-[#f43f5e] dark:text-rose-400 font-bold hover:underline">
               Community Rules
             </Link>{" "}
             and{" "}
-            <Link href="/terms" className="text-[#673ddc] dark:text-[#a78bfa] font-bold hover:underline">
+            <Link href="/terms" className="text-[#f43f5e] dark:text-rose-400 font-bold hover:underline">
               Terms of Service
             </Link>{" "}
             pages.

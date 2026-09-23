@@ -1,61 +1,64 @@
 @import "tailwindcss";
+@source "../**";
 
 @custom-variant dark (&:where(.dark-mode, .dark-mode *));
 
 :root {
-  --um-bg: #ffffff;
+  --um-bg: #fdfbf7;
   --um-surface-1: #ffffff;
-  --um-surface-2: #f7f6ff;
-  --um-surface-3: #f0edff;
-  --um-border: #e8e8ed;
-  --um-border-strong: #d4d4db;
-  --um-text: #18181b;
+  --um-surface-2: #fffbf5;
+  --um-surface-3: #fff1f2;
+  --um-border: #f3ede2;
+  --um-border-strong: #e5ded1;
+  --um-text: #111827;
   --um-text-muted: #6b7280;
-  --um-text-secondary: #5b34c9;
-  --um-accent: #673ddc;
-  --um-accent-gradient: linear-gradient(135deg, #673ddc, #7a4dff);
-  --um-accent-hover: #5b34c9;
-  --um-accent-soft: #f4f0ff;
+  --um-text-secondary: #f43f5e;
+  --um-accent: #f43f5e;
+  --um-accent-gradient: linear-gradient(135deg, #f97316, #f43f5e);
+  --um-accent-hover: #e11d48;
+  --um-accent-soft: #fff1f2;
   --um-online-dot: #22c55e;
-  --um-logo-text: #18181b;
+  --um-logo-text: #111827;
   --header-height: 70px;
 }
 
 html.dark-mode {
-  --um-bg: #0e0d14;
-  --um-surface-1: #161520;
-  --um-surface-2: #1e1d2c;
-  --um-surface-3: #262438;
-  --um-border: #29273c;
-  --um-border-strong: #383552;
-  --um-text: #f3f4f6;
+  --um-bg: #121016;
+  --um-surface-1: #1a1722;
+  --um-surface-2: #24202e;
+  --um-surface-3: #2e283b;
+  --um-border: #332d40;
+  --um-border-strong: #443c55;
+  --um-text: #f9fafb;
   --um-text-muted: #9ca3af;
-  --um-text-secondary: #a78bfa;
-  --um-accent: #7c3aed;
-  --um-accent-gradient: linear-gradient(135deg, #6d28d9, #7c3aed);
-  --um-accent-hover: #6d28d9;
-  --um-accent-soft: #231b40;
+  --um-text-secondary: #fb7185;
+  --um-accent: #fb7185;
+  --um-accent-gradient: linear-gradient(135deg, #f97316, #fb7185);
+  --um-accent-hover: #f43f5e;
+  --um-accent-soft: #381a28;
   --um-online-dot: #22c55e;
   --um-logo-text: #ffffff;
   color-scheme: dark;
 }
 
-* {
+*, ::before, ::after {
   box-sizing: border-box;
-  padding: 0;
-  margin: 0;
 }
 
 html {
   width: 100%;
+  max-width: 100vw;
   min-height: 100%;
+  overflow-x: hidden;
   background-color: var(--um-bg);
 }
 
 body {
   width: 100%;
+  max-width: 100vw;
   min-height: 100vh;
   min-height: 100dvh;
+  overflow-x: hidden;
   margin: 0;
   padding: 0;
   font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -90,16 +93,7 @@ html.dark-mode .ambient-blob-tr {
   user-select: none;
 }
 
-/* Header */
-header {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  top: 0;
-  z-index: 50;
-  position: sticky;
-}
+
 
 /* Choice Buttons */
 .choiceButton {
@@ -165,4 +159,8 @@ html.dark-mode .choiceButton--secondary:hover {
 ::-webkit-scrollbar-thumb {
   background: var(--um-border-strong);
   border-radius: 4px;
+}
+
+.font-handwriting {
+  font-family: var(--font-caveat), 'Caveat', cursive, sans-serif;
 }
