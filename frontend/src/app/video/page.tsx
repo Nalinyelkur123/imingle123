@@ -2,17 +2,14 @@ import { ChatRoom } from "@/components/ChatRoom";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Random Video Chat with Strangers",
+  title: "Video Chat — V Mingle",
   description:
-    "Connect instantly via 1-on-1 random video chat on V Mingle (VMingle). Fast, high-definition, free, and completely anonymous.",
-  alternates: {
-    canonical: "/video",
-  },
-  openGraph: {
-    title: "V Mingle: Random Video Chat with Strangers",
-    description:
-      "Connect instantly via 1-on-1 random video chat on V Mingle. Free, fast, and anonymous.",
-    url: "/video",
+    "Start your random video chat on V Mingle. Connect with strangers instantly, no account needed.",
+  // Live application screen — must not be indexed by search engines.
+  // Users reach this via the homepage CTA, not through search.
+  robots: {
+    index: false,
+    follow: false,
   },
 };
 

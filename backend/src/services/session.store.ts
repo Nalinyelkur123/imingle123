@@ -15,6 +15,7 @@ export type SessionStatus = 'active' | 'queued' | 'matched' | 'reconnecting' | '
 
 export interface SessionRecord {
   sessionId: string;
+  userId: string;
   tokenHash: string;
   status: SessionStatus;
   mode: ChatMode | null;
@@ -155,6 +156,7 @@ class PostgresSessionStore implements ISessionStore {
       await client.query(`
         CREATE TABLE IF NOT EXISTS anonymous_sessions (
           session_id VARCHAR(64) PRIMARY KEY,
+          user_id VARCHAR(64),
           token_hash VARCHAR(64) NOT NULL,
           status VARCHAR(32) NOT NULL DEFAULT 'active',
           mode VARCHAR(16),
@@ -164,6 +166,8 @@ class PostgresSessionStore implements ISessionStore {
           last_active_at BIGINT NOT NULL,
           expires_at BIGINT NOT NULL
         );
+
+        ALTER TABLE anonymous_sessions ADD COLUMN IF NOT EXISTS user_id VARCHAR(64);
 
         CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON anonymous_sessions(expires_at);
 
@@ -186,7 +190,7 @@ class PostgresSessionStore implements ISessionStore {
 
   public async getSession(sessionId: string): Promise<SessionRecord | null> {
     const res = await this.pool.query(
-      `SELECT session_id, token_hash, status, mode, interests, current_match_id, created_at, last_active_at, expires_at
+      `SELECT session_id, user_id, token_hash, status, mode, interests, current_match_id, created_at, last_active_at, expires_at
        FROM anonymous_sessions WHERE session_id = $1`,
       [sessionId]
     );
@@ -196,6 +200,7 @@ class PostgresSessionStore implements ISessionStore {
 
     const session: SessionRecord = {
       sessionId: row.session_id,
+      userId: row.user_id || `usr_${row.session_id.replace(/^sess_/, '')}`,
       tokenHash: row.token_hash,
       status: row.status as SessionStatus,
       mode: row.mode as ChatMode | null,
@@ -217,9 +222,10 @@ class PostgresSessionStore implements ISessionStore {
   public async saveSession(session: SessionRecord): Promise<void> {
     await this.pool.query(
       `INSERT INTO anonymous_sessions
-       (session_id, token_hash, status, mode, interests, current_match_id, created_at, last_active_at, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (session_id, user_id, token_hash, status, mode, interests, current_match_id, created_at, last_active_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (session_id) DO UPDATE SET
+         user_id = COALESCE(EXCLUDED.user_id, anonymous_sessions.user_id),
          status = EXCLUDED.status,
          mode = EXCLUDED.mode,
          interests = EXCLUDED.interests,
@@ -228,6 +234,7 @@ class PostgresSessionStore implements ISessionStore {
          expires_at = EXCLUDED.expires_at`,
       [
         session.sessionId,
+        session.userId,
         session.tokenHash,
         session.status,
         session.mode,

@@ -18,9 +18,24 @@ export const metadata: Metadata = {
   },
 };
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://vmingle.in";
+
 export default function AboutPage() {
+  const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+      { "@type": "ListItem", position: 2, name: "About V Mingle", item: `${SITE_URL}/about` },
+    ],
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-[#111827]">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+      />
       <MingleeHeader />
 
       <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">

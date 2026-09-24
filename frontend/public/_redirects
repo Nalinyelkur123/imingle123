@@ -1,0 +1,12 @@
+# Cloudflare Pages Redirects
+# Handles HTTP→HTTPS and www→non-www at the edge.
+# Cloudflare Pages processes this file automatically for static deployments.
+
+# www → non-www (permanent 301)
+https://www.vmingle.in/* https://vmingle.in/:splat 301
+
+# HTTP → HTTPS (permanent 301)
+# Note: Cloudflare also handles this via SSL/TLS → "Always Use HTTPS"
+# This _redirects file serves as a belt-and-suspenders fallback.
+http://vmingle.in/* https://vmingle.in/:splat 301
+http://www.vmingle.in/* https://vmingle.in/:splat 301

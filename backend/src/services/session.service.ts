@@ -16,6 +16,7 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 
 export interface AnonymousSession {
   sessionId: string;
+  userId: string;
   token: string;
   expiresAt: number;
   status: SessionStatus;
@@ -98,6 +99,10 @@ export class SessionService {
     if (verified) {
       const existingSession = await sessionStore.getSession(verified.sessionId);
       if (existingSession && existingSession.status !== 'ended') {
+        // Ensure userId exists
+        if (!existingSession.userId) {
+          existingSession.userId = `usr_${existingSession.sessionId.replace(/^sess_/, '')}`;
+        }
         // Renew expiration on active resumption
         const newExpiresAt = Date.now() + SESSION_TTL_MS;
         const renewedToken = this.signSessionToken(existingSession.sessionId, newExpiresAt);
@@ -109,10 +114,11 @@ export class SessionService {
 
         await sessionStore.saveSession(existingSession);
 
-        logger.info(`Resumed existing anonymous session: ${existingSession.sessionId}`);
+        logger.info(`Resumed existing anonymous session: ${existingSession.sessionId} (User: ${existingSession.userId})`);
 
         return {
           sessionId: existingSession.sessionId,
+          userId: existingSession.userId,
           token: renewedToken,
           expiresAt: newExpiresAt,
           status: existingSession.status,
@@ -123,8 +129,10 @@ export class SessionService {
       }
     }
 
-    // Generate fresh anonymous session
-    const sessionId = `sess_${crypto.randomUUID()}`;
+    // Generate fresh anonymous session and stable user ID
+    const randomSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+    const sessionId = `sess_${randomSuffix}`;
+    const userId = `usr_${randomSuffix}`;
     const now = Date.now();
     const expiresAt = now + SESSION_TTL_MS;
     const token = this.signSessionToken(sessionId, expiresAt);
@@ -132,6 +140,7 @@ export class SessionService {
 
     const newRecord: SessionRecord = {
       sessionId,
+      userId,
       tokenHash,
       status: 'active',
       mode: mode || null,
@@ -144,10 +153,11 @@ export class SessionService {
 
     await sessionStore.saveSession(newRecord);
 
-    logger.info(`Created new anonymous session: ${sessionId}`);
+    logger.info(`Created new anonymous session: ${sessionId} (User: ${userId})`);
 
     return {
       sessionId,
+      userId,
       token,
       expiresAt,
       status: 'active',

@@ -35,6 +35,7 @@ export const SocketEvents = {
   WEBRTC_OFFER: 'webrtc_offer',
   WEBRTC_ANSWER: 'webrtc_answer',
   ICE_CANDIDATE: 'ice_candidate',
+  HAIR_DETECTION_RESULT: 'hair_detection_result',
 
   // Server → Client
   MATCH_FOUND: 'match_found',
@@ -144,3 +145,12 @@ export const MESSAGE_RATE_LIMIT = 30;
 export const QUEUE_TIMEOUT_SECONDS = 120;
 export const WEBRTC_CONNECTION_TIMEOUT_SECONDS = 15;
 export const NEXT_COOLDOWN_MS = 2000;
+
+// ── Hair Detection ──────────────────────────────────────────────────────────
+export interface HairDetectionPayload {
+  session_id?: string;
+  user_id?: string;
+  long_hair_detected: boolean;
+  confidence: number;
+  timestamp?: string;
+}

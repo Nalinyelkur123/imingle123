@@ -18,6 +18,7 @@ export const BLOCK_USER = 'block_user' as const;
 export const WEBRTC_OFFER = 'webrtc_offer' as const;
 export const WEBRTC_ANSWER = 'webrtc_answer' as const;
 export const ICE_CANDIDATE = 'ice_candidate' as const;
+export const HAIR_DETECTION_RESULT = 'hair_detection_result' as const;
 
 // ── Server → Client Events ──────────────────────────────────────────────────
 export const MATCH_FOUND = 'match_found' as const;
@@ -30,6 +31,7 @@ export const ERROR = 'error' as const;
 export const ClientEvents = {
   JOIN_QUEUE, LEAVE_QUEUE, NEXT, STOP, SEND_MESSAGE,
   REPORT_USER, BLOCK_USER, WEBRTC_OFFER, WEBRTC_ANSWER, ICE_CANDIDATE,
+  HAIR_DETECTION_RESULT,
 } as const;
 
 export const ServerEvents = {
@@ -165,3 +167,25 @@ export const WEBRTC_CONNECTION_TIMEOUT_SECONDS = 15;
 export const MAX_REPORT_DESCRIPTION_LENGTH = 1000;
 export const NEXT_COOLDOWN_MS = 2000;
 export const HEALTH_CHECK_PATH = '/health';
+
+// ── Hair Detection ──────────────────────────────────────────────────────────
+export interface HairDetectionPayload {
+  session_id?: string;
+  user_id?: string;
+  long_hair_detected: boolean;
+  confidence: number;
+  timestamp?: string;
+}
+
+export interface DetectionEventDeliveryResult {
+  session_id: string;
+  user_id: string;
+  long_hair_detected: boolean;
+  confidence: number;
+  timestamp: string;
+  destination_ip: string;
+  destination_port: number;
+  processing_time_ms: number;
+  status: 'SUCCESS' | 'FAILED';
+  error_message?: string;
+}

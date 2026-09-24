@@ -63,10 +63,10 @@ export default function ContactPage() {
             <div className="mt-6 pt-4 border-t border-gray-100">
               <span className="text-xs font-semibold text-gray-400 block uppercase">Email</span>
               <a
-                href="mailto:safety@vmingle.com"
+                href="mailto:safety@vmingle.in"
                 className="text-base font-bold text-red-600 hover:underline"
               >
-                safety@vmingle.com
+                safety@vmingle.in
               </a>
             </div>
           </div>
@@ -85,10 +85,10 @@ export default function ContactPage() {
             <div className="mt-6 pt-4 border-t border-gray-100">
               <span className="text-xs font-semibold text-gray-400 block uppercase">Email</span>
               <a
-                href="mailto:support@vmingle.com"
+                href="mailto:support@vmingle.in"
                 className="text-base font-bold text-amber-600 hover:underline"
               >
-                support@vmingle.com
+                support@vmingle.in
               </a>
             </div>
           </div>
@@ -107,10 +107,10 @@ export default function ContactPage() {
             <div className="mt-6 pt-4 border-t border-gray-100">
               <span className="text-xs font-semibold text-gray-400 block uppercase">Email</span>
               <a
-                href="mailto:legal@vmingle.com"
+                href="mailto:legal@vmingle.in"
                 className="text-base font-bold text-orange-600 hover:underline"
               >
-                legal@vmingle.com
+                legal@vmingle.in
               </a>
             </div>
           </div>

@@ -2,17 +2,14 @@ import { ChatRoom } from "@/components/ChatRoom";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Random Text Chat with Strangers",
+  title: "Text Chat — V Mingle",
   description:
-    "Chat anonymously with strangers worldwide via free text chat on V Mingle (VMingle). No account required, instant matchmaking, and 100% private.",
-  alternates: {
-    canonical: "/text",
-  },
-  openGraph: {
-    title: "V Mingle: Random Text Chat with Strangers",
-    description:
-      "Chat anonymously with strangers worldwide via free text chat on V Mingle.",
-    url: "/text",
+    "Start your random text chat on V Mingle. Connect with strangers instantly, no account needed.",
+  // Live application screen — must not be indexed by search engines.
+  // Users reach this via the homepage CTA, not through search.
+  robots: {
+    index: false,
+    follow: false,
   },
 };
 

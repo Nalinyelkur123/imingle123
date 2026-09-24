@@ -21,6 +21,7 @@ const API_BASE_URL =
 
 export interface AnonymousSession {
   sessionId: string;
+  userId?: string;
   sessionToken: string;
   status: "idle" | "queued" | "matched" | "reconnecting" | "expired";
   expiresAt: number;
@@ -90,12 +91,14 @@ export async function initAnonymousSession(
     }
 
     const payload = await res.json();
-    if (payload.status === "success" && payload.data) {
+    const data = payload.data || payload.session;
+    if (data) {
       const sessionData: AnonymousSession = {
-        sessionId: payload.data.sessionId,
-        sessionToken: payload.data.sessionToken,
-        status: payload.data.status,
-        expiresAt: payload.data.expiresAt,
+        sessionId: data.sessionId,
+        userId: data.userId || `usr_${data.sessionId.replace(/^sess_/, '')}`,
+        sessionToken: data.sessionToken || data.token,
+        status: data.status,
+        expiresAt: data.expiresAt,
       };
 
       if (typeof window !== "undefined") {

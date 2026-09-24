@@ -53,10 +53,15 @@ const FAQS = [
   },
 ];
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://vmingle.in";
+
 export default function FaqPage() {
   const faqSchema = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
+    "@id": `${SITE_URL}/faq#faqpage`,
+    url: `${SITE_URL}/faq`,
+    name: "V Mingle FAQ — Frequently Asked Questions",
     mainEntity: FAQS.map((faq) => ({
       "@type": "Question",
       name: faq.q,
@@ -67,11 +72,34 @@ export default function FaqPage() {
     })),
   };
 
+  const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Home",
+        item: SITE_URL,
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "FAQ",
+        item: `${SITE_URL}/faq`,
+      },
+    ],
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-[#111827]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
       />
       <MingleeHeader />
 
