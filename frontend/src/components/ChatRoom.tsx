@@ -932,8 +932,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                   )}
 
                   {/* Subtle Floating Local Media Controls Toolbar (Revealed on hover: Voice & Flip) */}
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 border border-white/10 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                    {/* Toggle Microphone (Voice) */}
+                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 border border-white/10 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-30">
+                    {/* Voice Button (Toggle Microphone) */}
                     <button
                       onClick={toggleAudio}
                       type="button"
@@ -942,7 +942,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                           ? "bg-red-500 text-white"
                           : "text-gray-300 hover:text-white hover:bg-white/20"
                       }`}
-                      title={isAudioMuted ? "Unmute Mic" : "Mute Mic"}
+                      title="Voice"
+                      aria-label="Voice"
                     >
                       {isAudioMuted ? (
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -962,12 +963,13 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                       )}
                     </button>
 
-                    {/* Flip / Mirror Button */}
+                    {/* Flip Button */}
                     <button
                       onClick={() => setIsMirrored(!isMirrored)}
                       type="button"
                       className="flex h-6 w-6 items-center justify-center rounded-full text-gray-300 hover:text-white hover:bg-white/20 transition-colors cursor-pointer"
-                      title="Mirror Camera"
+                      title="Flip"
+                      aria-label="Flip"
                     >
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="17 1 21 5 17 9" />
