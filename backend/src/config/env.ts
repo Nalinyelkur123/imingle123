@@ -21,7 +21,7 @@ const envSchema = z.object({
   TURN_USERNAME: z.string().optional(),
   TURN_PASSWORD: z.string().optional(),
   SESSION_SECRET: z.string().min(16).default('dev-session-secret-change-in-production'),
-  CORS_ORIGIN: z.string().default('http://localhost:3000'),
+  CORS_ORIGIN: z.string().default('http://localhost:3000,https://vmingle.in,https://www.vmingle.in'),
   ADMIN_USERNAME: z.string().default('admin'),
   ADMIN_PASSWORD: z.string().default('admin'),
   // Hair detection destination and streaming settings
