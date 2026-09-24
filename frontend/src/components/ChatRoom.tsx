@@ -225,15 +225,41 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       const pc = new RTCPeerConnection(RTC_CONFIG);
       peerConnectionRef.current = pc;
 
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => {
-          pc.addTrack(track, localStreamRef.current!);
+      // Ensure localStream is available
+      let stream = localStreamRef.current;
+      if (!stream && typeof window !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+            audio: true,
+          });
+          localStreamRef.current = stream;
+          setCameraStatus("ready");
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
+            localVideoRef.current.play().catch(() => {});
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (stream) {
+        stream.getTracks().forEach((track) => {
+          try {
+            pc.addTrack(track, stream!);
+          } catch {
+            // track already added
+          }
         });
       }
 
       pc.ontrack = (event) => {
-        if (remoteVideoRef.current && event.streams[0]) {
-          remoteVideoRef.current.srcObject = event.streams[0];
+        if (event.streams && event.streams[0]) {
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = event.streams[0];
+            remoteVideoRef.current.play().catch(() => {});
+          }
           setRemoteStreamActive(true);
         }
       };
