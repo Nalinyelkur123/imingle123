@@ -89,7 +89,6 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
   // Local media controls & status
   const [isAudioMuted, setIsAudioMuted] = useState(false);
-  const [isVideoMuted, setIsVideoMuted] = useState(false);
   const [isMirrored, setIsMirrored] = useState(true);
   const [cameraStatus, setCameraStatus] = useState<"loading" | "ready" | "denied">("loading");
 
@@ -113,7 +112,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     videoRef: localVideoRef,
     sessionId: session?.sessionId,
     userId: session?.userId,
-    enabled: mode === "video" && cameraStatus === "ready" && !isVideoMuted,
+    enabled: mode === "video" && cameraStatus === "ready",
     fps: 5,
   });
 
@@ -172,18 +171,6 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         track.enabled = isAudioMuted;
       });
       setIsAudioMuted(nextState);
-    }
-  };
-
-  // Toggle local video camera
-  const toggleVideo = () => {
-    if (localStreamRef.current) {
-      const videoTracks = localStreamRef.current.getVideoTracks();
-      const nextState = !isVideoMuted;
-      videoTracks.forEach((track) => {
-        track.enabled = isVideoMuted;
-      });
-      setIsVideoMuted(nextState);
     }
   };
 
@@ -921,19 +908,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     muted
                     className={`h-full w-full object-cover ${
                       isMirrored ? "-scale-x-100" : ""
-                    } ${isVideoMuted ? "opacity-0" : "opacity-100"}`}
+                    }`}
                   />
-
-                  {/* Video Muted Overlay */}
-                  {isVideoMuted && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 text-gray-400 p-2 text-center">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mb-1 text-gray-500">
-                        <line x1="1" y1="1" x2="23" y2="23" />
-                        <path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34m-7.72-2.06a4 4 0 1 1-5.56-5.56" />
-                      </svg>
-                      <span className="text-[9px] sm:text-[10px] font-medium">Camera Off</span>
-                    </div>
-                  )}
 
                   {/* Camera Permission State: Denied or Not Working */}
                   {cameraStatus === "denied" && (
@@ -955,9 +931,9 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     </div>
                   )}
 
-                  {/* Subtle Floating Local Media Controls Toolbar (Revealed on hover) */}
+                  {/* Subtle Floating Local Media Controls Toolbar (Revealed on hover: Voice & Flip) */}
                   <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 border border-white/10 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                    {/* Toggle Microphone */}
+                    {/* Toggle Microphone (Voice) */}
                     <button
                       onClick={toggleAudio}
                       type="button"
@@ -982,30 +958,6 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                           <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                           <line x1="12" y1="19" x2="12" y2="23" />
                           <line x1="8" y1="23" x2="16" y2="23" />
-                        </svg>
-                      )}
-                    </button>
-
-                    {/* Toggle Video Camera */}
-                    <button
-                      onClick={toggleVideo}
-                      type="button"
-                      className={`flex h-6 w-6 items-center justify-center rounded-full transition-colors cursor-pointer ${
-                        isVideoMuted
-                          ? "bg-red-500 text-white"
-                          : "text-gray-300 hover:text-white hover:bg-white/20"
-                      }`}
-                      title={isVideoMuted ? "Turn Video On" : "Turn Video Off"}
-                    >
-                      {isVideoMuted ? (
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="1" y1="1" x2="23" y2="23" />
-                          <path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34" />
-                        </svg>
-                      ) : (
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <polygon points="23 7 16 12 23 17 23 7" />
-                          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                         </svg>
                       )}
                     </button>
