@@ -67,6 +67,7 @@ export async function initSession(req: Request, res: Response): Promise<void> {
 
     const sessionData = {
       sessionId: session.sessionId,
+      userId: session.userId,
       token: session.token,
       sessionToken: session.token,
       expiresAt: session.expiresAt,
@@ -117,6 +118,7 @@ export async function getSessionStatus(req: Request, res: Response): Promise<voi
 
     const statusData = {
       sessionId: session.sessionId,
+      userId: session.userId,
       status: session.status,
       mode: session.mode,
       interests: session.interests,

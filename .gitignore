@@ -50,3 +50,4 @@ redis-data/
 
 # OS files
 Thumbs.db
+*.zip

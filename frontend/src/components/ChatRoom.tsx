@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Header } from "@/components/Header";
 import { useInterests } from "@/hooks/useInterests";
+import { useHairDetection } from "@/hooks/useHairDetection";
 import {
   ChatState,
   ReportReason,
@@ -30,6 +31,7 @@ interface Message {
 
 interface ChatRoomProps {
   initialMode?: "video" | "text";
+  autoStart?: boolean;
 }
 
 const RTC_CONFIG: RTCConfiguration = {
@@ -45,11 +47,28 @@ function createUniqueId(prefix = "msg"): string {
   return `${prefix}-${Date.now()}-${msgCounter}-${Math.random().toString(36).substring(2, 7)}`;
 }
 
-export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
+export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomProps) {
   const [mode] = useState<"video" | "text">(initialMode);
-  const [chatState, setChatState] = useState<ChatState>(ChatState.IDLE);
+  const [chatState, setChatState] = useState<ChatState>(
+    autoStart ? ChatState.SEARCHING : ChatState.IDLE
+  );
   const [stopConfirm, setStopConfirm] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (autoStart) {
+      return [
+        {
+          id: createUniqueId("sys"),
+          sender: "system",
+          text: "Looking for someone to chat with worldwide...",
+          time: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+      ];
+    }
+    return [];
+  });
   const [inputMessage, setInputMessage] = useState("");
   const [sharedInterest, setSharedInterest] = useState<string | null>(null);
   const [currentMatch, setCurrentMatch] = useState<MatchInfo | null>(null);
@@ -88,6 +107,15 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+
+  // Real-time modular long-hair detection on active local video stream
+  useHairDetection({
+    videoRef: localVideoRef,
+    sessionId: session?.sessionId,
+    userId: session?.userId,
+    enabled: mode === "video" && cameraStatus === "ready" && !isVideoMuted,
+    fps: 5,
+  });
 
   // Clean up WebRTC peer connection
   const cleanupPeerConnection = useCallback(() => {
@@ -278,24 +306,35 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
     setMatchDuration(0);
   }, [stopConfirm, chatState, cleanupPeerConnection]);
 
-  // 1. Initialize privacy-safe anonymous session on component mount
+  // 1. Initialize privacy-safe anonymous session on component mount & auto-start
+  const hasAutoStartedRef = useRef(false);
+
   useEffect(() => {
     let unmounted = false;
 
     initAnonymousSession(mode).then((sess) => {
       if (unmounted) return;
+      let socket;
       if (sess) {
         setSession(sess);
-        connectSocket(sess.sessionToken);
+        socket = connectSocket(sess.sessionToken);
       } else {
-        connectSocket();
+        socket = connectSocket();
+      }
+
+      if (autoStart && !hasAutoStartedRef.current) {
+        hasAutoStartedRef.current = true;
+        socket.emit(SocketEvents.JOIN_QUEUE, {
+          mode,
+          interests,
+        });
       }
     });
 
     return () => {
       unmounted = true;
     };
-  }, [mode]);
+  }, [mode, autoStart, interests]);
 
   // 2. Countdown timer for peer reconnection grace period (15s)
   useEffect(() => {
@@ -316,9 +355,10 @@ export function ChatRoom({ initialMode = "video" }: ChatRoomProps) {
   useEffect(() => {
     const socket = connectSocket();
 
-    const handleSessionEstablished = (payload: { sessionId: string; sessionToken: string }) => {
+    const handleSessionEstablished = (payload: { sessionId: string; userId?: string; sessionToken: string }) => {
       setSession((prev) => ({
         sessionId: payload.sessionId,
+        userId: payload.userId || prev?.userId,
         sessionToken: payload.sessionToken,
         status: prev?.status || "idle",
         expiresAt: prev?.expiresAt || Date.now() + 7200000,

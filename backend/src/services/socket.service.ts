@@ -11,6 +11,7 @@ import { corsOptions } from '../config/cors.js';
 import { logger } from '../utils/logger.js';
 import { matchmaker, ChatMode } from './matchmaker.service.js';
 import { sessionService } from './session.service.js';
+import { hairDetectionService } from './hair-detection.service.js';
 import {
   ClientEvents,
   ServerEvents,
@@ -22,6 +23,7 @@ import {
   WebRTCOfferPayload,
   WebRTCAnswerPayload,
   ICECandidatePayload,
+  HairDetectionPayload,
 } from './shared-types.js';
 
 let ioInstance: SocketIOServer | null = null;
@@ -69,7 +71,11 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
       }
     }
 
+    const sessionRecord = await sessionService.getSession(verified.sessionId);
+    const userId = sessionRecord?.userId || `usr_${verified.sessionId.replace(/^sess_/, '')}`;
+
     socket.data.sessionId = verified.sessionId;
+    socket.data.userId = userId;
     socket.data.sessionToken = token;
     next();
   });
@@ -81,14 +87,16 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
   io.on('connection', (socket: Socket) => {
     const sessionId = socket.data.sessionId as string;
+    const userId = socket.data.userId as string;
     const sessionToken = socket.data.sessionToken as string;
     matchmaker.onSocketConnected(socket.id, sessionId);
-    logger.info(`Socket connected: ${socket.id} (Session: ${sessionId})`);
+    logger.info(`Socket connected: ${socket.id} (Session: ${sessionId}, User: ${userId})`);
     broadcastOnlineCount();
 
     // Inform client of active session identity
     socket.emit('session_established', {
       sessionId,
+      userId,
       sessionToken,
     });
 
@@ -273,9 +281,22 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
       }
     });
 
+    // ── REAL-TIME HAIR DETECTION EVENT ──────────────────────────────────────
+    socket.on(ClientEvents.HAIR_DETECTION_RESULT, async (payload: HairDetectionPayload) => {
+      try {
+        await hairDetectionService.processDetectionEvent(sessionId, payload, socket.data.userId);
+      } catch (err) {
+        logger.error('Error processing hair detection event from socket:', {
+          error: err instanceof Error ? err.message : String(err),
+          sessionId,
+        });
+      }
+    });
+
     // ── DISCONNECT ──────────────────────────────────────────────────────────
     socket.on('disconnect', () => {
       logger.info(`Socket disconnected: ${socket.id} (Session: ${sessionId})`);
+      hairDetectionService.onSessionDisconnected(sessionId);
 
       const cleanup = matchmaker.onSocketDisconnected(socket.id, (_expiredMatch, expiredPartnerSocketId) => {
         // Callback fired if 15s grace period expires without user reconnecting

@@ -24,6 +24,13 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   ADMIN_USERNAME: z.string().default('admin'),
   ADMIN_PASSWORD: z.string().default('admin'),
+  // Hair detection destination and streaming settings
+  DETECTION_DESTINATION_IP: z.string().default('127.0.0.1'),
+  DETECTION_DESTINATION_PORT: z.coerce.number().default(8080),
+  DETECTION_FPS: z.coerce.number().default(5),
+  DETECTION_RETRY_COUNT: z.coerce.number().default(3),
+  DETECTION_TIMEOUT_MS: z.coerce.number().default(5000),
+  DETECTION_ENABLED: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(true),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -66,12 +66,13 @@ export default function HomePage() {
     };
   }, []);
 
-  const handleStartChat = () => {
+  const handleStartChat = (overrideMode?: "video" | "text") => {
+    const targetMode = overrideMode || activeMode;
     const trimmed = inputValue.trim().replace(/^,+|,+$/g, "");
     if (trimmed && !interests.includes(trimmed)) {
       saveInterests([...interests, trimmed]);
     }
-    router.push(activeMode === "video" ? "/video" : "/text");
+    router.push(targetMode === "video" ? "/video" : "/text");
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -220,41 +221,33 @@ export default function HomePage() {
           {/* =============================================================== */}
           <div className="mt-8 sm:mt-10 w-full max-w-[500px] rounded-3xl sm:rounded-[32px] border border-gray-200 bg-white p-4 sm:p-5 shadow-xl shadow-gray-200/50">
             
-            {/* Mode Switcher Tabs (Video vs Text) */}
+            {/* Direct Action Buttons (Video Chat vs Text Chat) */}
             <div className="grid grid-cols-2 gap-1.5 p-1.5 rounded-2xl bg-gray-100 border border-gray-200/70">
-              {/* Video Chat Tab (Active) */}
-              <button
-                type="button"
-                onClick={() => setActiveMode("video")}
-                className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm sm:text-[15px] font-bold transition-all cursor-pointer ${
-                  activeMode === "video"
-                    ? "bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 text-white shadow-md shadow-orange-500/20"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
+              {/* Video Chat Button (Direct Redirect) */}
+              <Link
+                href="/video"
+                onClick={() => handleStartChat("video")}
+                className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm sm:text-[15px] font-bold transition-all cursor-pointer bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 text-white shadow-md shadow-orange-500/20 hover:brightness-105 active:scale-95 select-none"
                 id="mode-video-tab"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M4 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm14.5 4.5l4-2.5v12l-4-2.5v-7z" />
                 </svg>
                 <span>Video Chat</span>
-              </button>
+              </Link>
 
-              {/* Text Chat Tab */}
-              <button
-                type="button"
-                onClick={() => setActiveMode("text")}
-                className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm sm:text-[15px] font-bold transition-all cursor-pointer ${
-                  activeMode === "text"
-                    ? "bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 text-white shadow-md shadow-orange-500/20"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
+              {/* Text Chat Button (Direct Redirect) */}
+              <Link
+                href="/text"
+                onClick={() => handleStartChat("text")}
+                className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm sm:text-[15px] font-bold transition-all cursor-pointer text-gray-700 hover:text-gray-900 hover:bg-white/80 active:scale-95 select-none"
                 id="mode-text-tab"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
                 </svg>
                 <span>Text Chat</span>
-              </button>
+              </Link>
             </div>
 
             {/* Interest Input & Circular Launch Button */}
@@ -272,7 +265,7 @@ export default function HomePage() {
 
               <button
                 type="button"
-                onClick={handleStartChat}
+                onClick={() => handleStartChat()}
                 className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-orange-400 via-rose-500 to-pink-500 text-white shadow-md shadow-rose-500/25 hover:brightness-105 active:scale-95 transition-all cursor-pointer"
                 title="Start Chatting"
                 id="launch-chat-btn"
