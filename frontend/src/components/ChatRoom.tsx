@@ -135,20 +135,51 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     if (mode !== "video") return;
     setCameraStatus("loading");
 
-    navigator.mediaDevices
-      ?.getUserMedia({ video: true, audio: true })
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      console.warn("getUserMedia is not supported on this browser/environment");
+      setCameraStatus("denied");
+      return;
+    }
+
+    const tryGetUserMedia = async () => {
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+          audio: true,
+        });
+      } catch {
+        try {
+          return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        } catch {
+          return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+      }
+    };
+
+    tryGetUserMedia()
       .then((stream) => {
         localStreamRef.current = stream;
+        setCameraStatus("ready");
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
+          localVideoRef.current.play().catch(() => {});
         }
-        setCameraStatus("ready");
       })
       .catch((err) => {
         console.warn("Camera/microphone access denied or unavailable:", err);
         setCameraStatus("denied");
       });
   }, [mode]);
+
+  // Ensure local video element srcObject is bound whenever stream or cameraStatus becomes ready
+  useEffect(() => {
+    if (cameraStatus === "ready" && localVideoRef.current && localStreamRef.current) {
+      if (localVideoRef.current.srcObject !== localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+        localVideoRef.current.play().catch(() => {});
+      }
+    }
+  }, [cameraStatus]);
 
   useEffect(() => {
     requestCameraAccess();
