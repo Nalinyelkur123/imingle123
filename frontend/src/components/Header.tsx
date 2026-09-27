@@ -38,7 +38,7 @@ export function Header() {
     getThemeServerSnapshot
   );
 
-  const [onlineCount, setOnlineCount] = useState<string>("1");
+  const [onlineCount, setOnlineCount] = useState<string>("0");
 
   useEffect(() => {
     if (isDark) {
@@ -52,7 +52,7 @@ export function Header() {
     // 1. Initial live stats fetch
     fetchLiveStats().then((data) => {
       if (data?.stats?.onlineUsers !== undefined) {
-        setOnlineCount(String(data.stats.onlineUsers));
+        setOnlineCount(data.stats.onlineUsers.toLocaleString());
       }
     });
 
@@ -60,7 +60,7 @@ export function Header() {
     const socket = connectSocket();
     const handleOnlineCount = (payload: { count: number }) => {
       if (payload?.count !== undefined) {
-        setOnlineCount(String(payload.count));
+        setOnlineCount(payload.count.toLocaleString());
       }
     };
 
@@ -137,7 +137,7 @@ export function Header() {
         <div className="flex items-center gap-1.5 rounded-full border border-gray-200/90 bg-white px-3 py-1 shadow-2xs dark:border-gray-700 dark:bg-[#1a1724]">
           <span className="h-2 w-2 rounded-full bg-[#22c55e] animate-pulse" />
           <strong className="text-xs sm:text-sm font-bold text-[#f43f5e] dark:text-[#fb7185]">
-            {onlineCount.endsWith("+") ? onlineCount : `${onlineCount}+`}
+            {onlineCount}
           </strong>
           <span className="text-xs text-gray-500 dark:text-gray-400 font-normal hidden min-[360px]:inline">
             online

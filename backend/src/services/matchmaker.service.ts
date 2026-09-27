@@ -50,21 +50,46 @@ class MatchmakerService {
   // Reverse index: sessionId -> matchId
   private sessionToMatch: Map<string, string> = new Map();
 
-  // Reverse index: socketId -> sessionId
-  private socketToSession: Map<string, string> = new Map();
+  // Multi-socket presence tracking: sessionId -> Set of active socketIds
+  private sessionToSockets: Map<string, Set<string>> = new Map();
+
+  // Reverse index: socketId -> { sessionId, userId }
+  private socketToSession: Map<string, { sessionId: string; userId: string }> = new Map();
 
   // Reconnection timers indexed by sessionId
   private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
 
-  // Total active socket connections
-  private connectedSocketsCount = 0;
+  /**
+   * Tracks socket connection and binds sessionId + userId.
+   * A single session can have multiple sockets (e.g. tabs or reconnecting),
+   * but counts as 1 unique online user.
+   */
+  public onSocketConnected(socketId: string, sessionId: string, userId: string): void {
+    this.socketToSession.set(socketId, { sessionId, userId });
+
+    let sockets = this.sessionToSockets.get(sessionId);
+    if (!sockets) {
+      sockets = new Set<string>();
+      this.sessionToSockets.set(sessionId, sockets);
+    }
+    sockets.add(socketId);
+  }
 
   /**
-   * Tracks socket connection and binds sessionId
+   * Rebinds an existing socket to a new or verified sessionId & userId without duplicates.
    */
-  public onSocketConnected(socketId: string, sessionId: string): void {
-    this.connectedSocketsCount++;
-    this.socketToSession.set(socketId, sessionId);
+  public rebindSocket(socketId: string, newSessionId: string, newUserId: string): void {
+    const oldInfo = this.socketToSession.get(socketId);
+    if (oldInfo && oldInfo.sessionId !== newSessionId) {
+      const oldSockets = this.sessionToSockets.get(oldInfo.sessionId);
+      if (oldSockets) {
+        oldSockets.delete(socketId);
+        if (oldSockets.size === 0) {
+          this.sessionToSockets.delete(oldInfo.sessionId);
+        }
+      }
+    }
+    this.onSocketConnected(socketId, newSessionId, newUserId);
   }
 
   /**
@@ -73,14 +98,15 @@ class MatchmakerService {
    */
   public handleReconnect(
     sessionId: string,
-    newSocketId: string
+    newSocketId: string,
+    userId: string
   ): {
     resumed: boolean;
     match?: ActiveMatch;
     partnerSocketId?: string;
     isInitiator?: boolean;
   } {
-    this.socketToSession.set(newSocketId, sessionId);
+    this.onSocketConnected(newSocketId, sessionId, userId);
 
     // Check if user was in a match that was paused for reconnection
     const matchId = this.sessionToMatch.get(sessionId);
@@ -129,7 +155,9 @@ class MatchmakerService {
 
   /**
    * Tracks socket disconnection.
-   * If user was in an active match, holds it in grace period before ending.
+   * If the session has other active sockets open (e.g. another tab), it remains online.
+   * If all sockets for the session are disconnected and user was in an active match,
+   * holds it in grace period before ending.
    */
   public onSocketDisconnected(
     socketId: string,
@@ -138,29 +166,44 @@ class MatchmakerService {
     matchPaused?: ActiveMatch;
     partnerSocketId?: string;
     graceSeconds: number;
+    sessionEnded: boolean;
   } {
-    if (this.connectedSocketsCount > 0) {
-      this.connectedSocketsCount--;
-    }
-
-    const sessionId = this.socketToSession.get(socketId);
+    const sessionInfo = this.socketToSession.get(socketId);
     this.socketToSession.delete(socketId);
 
-    if (!sessionId) return { graceSeconds: 0 };
+    if (!sessionInfo) {
+      return { graceSeconds: 0, sessionEnded: false };
+    }
+
+    const { sessionId } = sessionInfo;
+    const sockets = this.sessionToSockets.get(sessionId);
+    if (sockets) {
+      sockets.delete(socketId);
+      if (sockets.size === 0) {
+        this.sessionToSockets.delete(sessionId);
+      }
+    }
+
+    const hasRemainingSockets = (this.sessionToSockets.get(sessionId)?.size ?? 0) > 0;
+
+    // If session still has other active sockets, do not dismantle queue or active match
+    if (hasRemainingSockets) {
+      return { graceSeconds: 0, sessionEnded: false };
+    }
 
     // Remove from waiting queue if queued
     this.leaveQueue(sessionId);
 
     // Check if in active match
     const matchId = this.sessionToMatch.get(sessionId);
-    if (!matchId) return { graceSeconds: 0 };
+    if (!matchId) return { graceSeconds: 0, sessionEnded: true };
 
     const match = this.activeMatches.get(matchId);
-    if (!match) return { graceSeconds: 0 };
+    if (!match) return { graceSeconds: 0, sessionEnded: true };
 
     const partner = match.user1.sessionId === sessionId ? match.user2 : match.user1;
     const partnerSocketId = partner.socketId;
-    if (!partnerSocketId) return { graceSeconds: 0 };
+    if (!partnerSocketId) return { graceSeconds: 0, sessionEnded: true };
 
     // Set match status to reconnecting
     match.status = 'reconnecting';
@@ -188,17 +231,22 @@ class MatchmakerService {
       matchPaused: match,
       partnerSocketId,
       graceSeconds: RECONNECT_GRACE_PERIOD_MS / 1000,
+      sessionEnded: true,
     };
   }
 
   /**
-   * Adds a user session to the appropriate queue and attempts to find a match
+   * Adds a user session to the appropriate queue and attempts to find a match.
+   * Strictly prevents self-matching (same sessionId or same userId).
+   * Automatically filters stale/dead candidates.
    */
   public joinQueue(
     sessionId: string,
     socketId: string,
     mode: ChatMode,
-    interests: string[] = []
+    interests: string[] = [],
+    userId?: string,
+    isSocketAlive?: (id: string) => boolean
   ): { matched: boolean; match?: ActiveMatch; partnerSocketId?: string; partnerSessionId?: string } {
     // If user is already in a match, end it first
     const existingMatchId = this.sessionToMatch.get(sessionId);
@@ -206,7 +254,7 @@ class MatchmakerService {
       this.endMatch(existingMatchId, 'new_search');
     }
 
-    // Remove any existing queue entry for this session
+    // Remove any existing queue entry for this session or socket
     this.leaveQueue(sessionId);
 
     const normalizedInterests = interests
@@ -214,6 +262,16 @@ class MatchmakerService {
       .filter((i) => i.length > 0);
 
     const queue = mode === 'video' ? this.videoQueue : this.textQueue;
+
+    // Prune stale/disconnected candidates from queue first
+    if (isSocketAlive) {
+      for (let i = queue.length - 1; i >= 0; i--) {
+        if (!isSocketAlive(queue[i].socketId)) {
+          logger.info(`Pruned dead socket ${queue[i].socketId} from ${mode} queue`);
+          queue.splice(i, 1);
+        }
+      }
+    }
 
     // Search for a partner in the waiting queue
     let partnerIndex = -1;
@@ -223,7 +281,9 @@ class MatchmakerService {
     if (normalizedInterests.length > 0) {
       for (let i = 0; i < queue.length; i++) {
         const candidate = queue[i];
-        if (candidate.sessionId === sessionId) continue;
+        // Self-match prevention: skip same session, socket, or user
+        if (candidate.sessionId === sessionId || candidate.socketId === socketId) continue;
+        if (userId && this.socketToSession.get(candidate.socketId)?.userId === userId) continue;
 
         const common = candidate.interests.find((tag) =>
           normalizedInterests.includes(tag)
@@ -239,10 +299,13 @@ class MatchmakerService {
     // 2. Priority 2: match with the first waiting candidate
     if (partnerIndex === -1 && queue.length > 0) {
       for (let i = 0; i < queue.length; i++) {
-        if (queue[i].sessionId !== sessionId) {
-          partnerIndex = i;
-          break;
-        }
+        const candidate = queue[i];
+        // Self-match prevention: skip same session, socket, or user
+        if (candidate.sessionId === sessionId || candidate.socketId === socketId) continue;
+        if (userId && this.socketToSession.get(candidate.socketId)?.userId === userId) continue;
+
+        partnerIndex = i;
+        break;
       }
     }
 
@@ -311,7 +374,7 @@ class MatchmakerService {
   }
 
   /**
-   * Removes a user from queue by sessionId
+   * Removes a user from queue by sessionId or socketId
    */
   public leaveQueue(sessionId: string): boolean {
     const vLen = this.videoQueue.length;
@@ -331,9 +394,9 @@ class MatchmakerService {
    * Retrieves active match for a given socketId
    */
   public getMatchBySocket(socketId: string): ActiveMatch | undefined {
-    const sessionId = this.socketToSession.get(socketId);
-    if (!sessionId) return undefined;
-    const matchId = this.sessionToMatch.get(sessionId);
+    const sessionInfo = this.socketToSession.get(socketId);
+    if (!sessionInfo) return undefined;
+    const matchId = this.sessionToMatch.get(sessionInfo.sessionId);
     if (!matchId) return undefined;
     return this.activeMatches.get(matchId);
   }
@@ -392,7 +455,7 @@ class MatchmakerService {
   }
 
   /**
-   * Returns current statistics
+   * Returns accurate real-time statistics based on unique active sessions
    */
   public getStats(): {
     onlineUsers: number;
@@ -401,7 +464,7 @@ class MatchmakerService {
     videoQueueCount: number;
   } {
     return {
-      onlineUsers: Math.max(this.connectedSocketsCount, 1),
+      onlineUsers: this.sessionToSockets.size,
       activeMatches: this.activeMatches.size,
       textQueueCount: this.textQueue.length,
       videoQueueCount: this.videoQueue.length,

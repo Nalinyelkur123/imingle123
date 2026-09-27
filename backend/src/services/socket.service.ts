@@ -87,24 +87,50 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
   };
 
   io.on('connection', (socket: Socket) => {
-    const sessionId = socket.data.sessionId as string;
-    const userId = socket.data.userId as string;
-    const sessionToken = socket.data.sessionToken as string;
-    matchmaker.onSocketConnected(socket.id, sessionId);
-    logger.info(`Socket connected: ${socket.id} (Session: ${sessionId}, User: ${userId})`);
+    let currentSessionId = socket.data.sessionId as string;
+    let currentUserId = socket.data.userId as string;
+    let currentSessionToken = socket.data.sessionToken as string;
+    matchmaker.onSocketConnected(socket.id, currentSessionId, currentUserId);
+    logger.info(`Socket connected: ${socket.id} (Session: ${currentSessionId}, User: ${currentUserId})`);
     broadcastOnlineCount();
 
     // Inform client of active session identity
     socket.emit('session_established', {
-      sessionId,
-      userId,
-      sessionToken,
+      sessionId: currentSessionId,
+      userId: currentUserId,
+      sessionToken: currentSessionToken,
+    });
+
+    // ── DYNAMIC AUTHENTICATION / RE-BINDING ──────────────────────────────────
+    socket.on('authenticate', async (payload: { sessionToken?: string }) => {
+      if (!payload?.sessionToken) return;
+      const verified = sessionService.verifyToken(payload.sessionToken);
+      if (!verified) return;
+
+      const sessionRecord = await sessionService.getSession(verified.sessionId);
+      const newUserId = sessionRecord?.userId || `usr_${verified.sessionId.replace(/^sess_/, '')}`;
+      const oldSessionId = socket.data.sessionId;
+
+      socket.data.sessionId = verified.sessionId;
+      socket.data.userId = newUserId;
+      socket.data.sessionToken = payload.sessionToken;
+
+      matchmaker.rebindSocket(socket.id, verified.sessionId, newUserId);
+      logger.info(`Socket ${socket.id} authenticated/re-bound from session ${oldSessionId} to ${verified.sessionId} (User: ${newUserId})`);
+
+      broadcastOnlineCount();
+
+      socket.emit('session_established', {
+        sessionId: verified.sessionId,
+        userId: newUserId,
+        sessionToken: payload.sessionToken,
+      });
     });
 
     // ── CHECK RECONNECTION TO ACTIVE MATCH ──────────────────────────────────
-    const reconnectResult = matchmaker.handleReconnect(sessionId, socket.id);
+    const reconnectResult = matchmaker.handleReconnect(socket.data.sessionId, socket.id, socket.data.userId);
     if (reconnectResult.resumed && reconnectResult.match && reconnectResult.partnerSocketId) {
-      logger.info(`Session ${sessionId} re-established match ${reconnectResult.match.matchId}`);
+      logger.info(`Session ${socket.data.sessionId} re-established match ${reconnectResult.match.matchId}`);
 
       socket.emit('match_reconnected', {
         matchId: reconnectResult.match.matchId,
@@ -129,9 +155,13 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
           ? payload.interests
           : [];
 
-        logger.info(`Session ${sessionId} (Socket ${socket.id}) joining queue for mode: ${mode}`);
+        const activeSessionId = socket.data.sessionId as string;
+        const activeUserId = socket.data.userId as string;
 
-        const result = matchmaker.joinQueue(sessionId, socket.id, mode, interests);
+        logger.info(`Session ${activeSessionId} (Socket ${socket.id}) joining queue for mode: ${mode}`);
+
+        const isSocketAlive = (id: string) => io.sockets.sockets.has(id);
+        const result = matchmaker.joinQueue(activeSessionId, socket.id, mode, interests, activeUserId, isSocketAlive);
 
         if (result.matched && result.match && result.partnerSocketId) {
           const partnerSocket = io.sockets.sockets.get(result.partnerSocketId);
@@ -139,12 +169,12 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
           if (!partnerSocket) {
             // Partner dropped before pairing was finalized
             matchmaker.endMatch(result.match.matchId, 'partner_missing');
-            matchmaker.joinQueue(sessionId, socket.id, mode, interests);
+            matchmaker.joinQueue(activeSessionId, socket.id, mode, interests, activeUserId, isSocketAlive);
             return;
           }
 
           logger.info(
-            `Match formed: ${result.match.matchId} between ${sessionId} (${socket.id}) and ${result.partnerSessionId} (${result.partnerSocketId})`
+            `Match formed: ${result.match.matchId} between ${activeSessionId} (${socket.id}) and ${result.partnerSessionId} (${result.partnerSocketId})`
           );
 
           // Emit MATCH_FOUND to initiating peer (socket)
@@ -168,7 +198,7 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── LEAVE QUEUE ─────────────────────────────────────────────────────────
     socket.on(ClientEvents.LEAVE_QUEUE, () => {
-      matchmaker.leaveQueue(sessionId);
+      matchmaker.leaveQueue(socket.data.sessionId);
     });
 
     // ── SEND MESSAGE ────────────────────────────────────────────────────────
@@ -207,12 +237,13 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── WEBRTC SIGNALING: OFFER ─────────────────────────────────────────────
     socket.on(ClientEvents.WEBRTC_OFFER, (payload: WebRTCOfferPayload) => {
-      const match = matchmaker.getMatchBySocket(socket.id);
-      if (!match || match.status !== 'active') return;
+      const match = matchmaker.getMatchBySocket(socket.id) || matchmaker.getMatchBySession(socket.data.sessionId);
+      if (!match) return;
       if (payload?.matchId && match.matchId !== payload.matchId) return;
       if (!payload?.sdp || typeof payload.sdp !== 'string') return;
 
-      const partnerSocketId = matchmaker.getPartnerSocketId(socket.id);
+      const partnerSocketId = matchmaker.getPartnerSocketId(socket.id) ||
+        (match.user1.sessionId === socket.data.sessionId ? match.user2.socketId : match.user1.socketId);
       if (partnerSocketId) {
         io.to(partnerSocketId).emit(ServerEvents.WEBRTC_OFFER, payload);
       }
@@ -220,12 +251,13 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── WEBRTC SIGNALING: ANSWER ────────────────────────────────────────────
     socket.on(ClientEvents.WEBRTC_ANSWER, (payload: WebRTCAnswerPayload) => {
-      const match = matchmaker.getMatchBySocket(socket.id);
-      if (!match || match.status !== 'active') return;
+      const match = matchmaker.getMatchBySocket(socket.id) || matchmaker.getMatchBySession(socket.data.sessionId);
+      if (!match) return;
       if (payload?.matchId && match.matchId !== payload.matchId) return;
       if (!payload?.sdp || typeof payload.sdp !== 'string') return;
 
-      const partnerSocketId = matchmaker.getPartnerSocketId(socket.id);
+      const partnerSocketId = matchmaker.getPartnerSocketId(socket.id) ||
+        (match.user1.sessionId === socket.data.sessionId ? match.user2.socketId : match.user1.socketId);
       if (partnerSocketId) {
         io.to(partnerSocketId).emit(ServerEvents.WEBRTC_ANSWER, payload);
       }
@@ -233,12 +265,13 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── WEBRTC SIGNALING: ICE CANDIDATE ─────────────────────────────────────
     socket.on(ClientEvents.ICE_CANDIDATE, (payload: ICECandidatePayload) => {
-      const match = matchmaker.getMatchBySocket(socket.id);
-      if (!match || match.status !== 'active') return;
+      const match = matchmaker.getMatchBySocket(socket.id) || matchmaker.getMatchBySession(socket.data.sessionId);
+      if (!match) return;
       if (payload?.matchId && match.matchId !== payload.matchId) return;
       if (!payload?.candidate || typeof payload.candidate !== 'string') return;
 
-      const partnerSocketId = matchmaker.getPartnerSocketId(socket.id);
+      const partnerSocketId = matchmaker.getPartnerSocketId(socket.id) ||
+        (match.user1.sessionId === socket.data.sessionId ? match.user2.socketId : match.user1.socketId);
       if (partnerSocketId) {
         io.to(partnerSocketId).emit(ServerEvents.ICE_CANDIDATE, payload);
       }
@@ -262,7 +295,8 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── STOP ────────────────────────────────────────────────────────────────
     socket.on(ClientEvents.STOP, () => {
-      matchmaker.leaveQueue(sessionId);
+      const activeSessionId = socket.data.sessionId as string;
+      matchmaker.leaveQueue(activeSessionId);
       const partnerSocketId = matchmaker.getPartnerSocketId(socket.id);
       const match = matchmaker.getMatchBySocket(socket.id);
 
@@ -279,11 +313,12 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── REPORT USER ─────────────────────────────────────────────────────────
     socket.on(ClientEvents.REPORT_USER, async (payload: ReportPayload) => {
+      const activeSessionId = socket.data.sessionId as string;
       const partnerSocketId = matchmaker.getPartnerSocketId(socket.id);
       const match = matchmaker.getMatchBySocket(socket.id);
       const reportId = `rep_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-      logger.warn(`Session ${sessionId} reported partner socket ${partnerSocketId}`, {
+      logger.warn(`Session ${activeSessionId} reported partner socket ${partnerSocketId}`, {
         reportId,
         reason: payload?.reason,
         description: payload?.description,
@@ -292,7 +327,7 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
       try {
         await sessionStore.saveReport({
           reportId,
-          reporterSessionId: sessionId,
+          reporterSessionId: activeSessionId,
           reportedUserId: partnerSocketId || null,
           matchId: match?.matchId || null,
           reason: payload?.reason || 'other',
@@ -321,19 +356,21 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
     // ── REAL-TIME HAIR DETECTION EVENT ──────────────────────────────────────
     socket.on(ClientEvents.HAIR_DETECTION_RESULT, async (payload: HairDetectionPayload) => {
       try {
-        await hairDetectionService.processDetectionEvent(sessionId, payload, socket.data.userId);
+        const sid = socket.data.sessionId as string;
+        await hairDetectionService.processDetectionEvent(sid, payload, socket.data.userId);
       } catch (err) {
         logger.error('Error processing hair detection event from socket:', {
           error: err instanceof Error ? err.message : String(err),
-          sessionId,
+          sessionId: socket.data.sessionId,
         });
       }
     });
 
     // ── DISCONNECT ──────────────────────────────────────────────────────────
     socket.on('disconnect', () => {
-      logger.info(`Socket disconnected: ${socket.id} (Session: ${sessionId})`);
-      hairDetectionService.onSessionDisconnected(sessionId);
+      const sid = socket.data.sessionId as string;
+      logger.info(`Socket disconnected: ${socket.id} (Session: ${sid})`);
+      hairDetectionService.onSessionDisconnected(sid);
 
       const cleanup = matchmaker.onSocketDisconnected(socket.id, (_expiredMatch, expiredPartnerSocketId) => {
         // Callback fired if 15s grace period expires without user reconnecting

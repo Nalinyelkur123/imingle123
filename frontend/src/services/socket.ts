@@ -31,13 +31,20 @@ export function getSocket(explicitToken?: string): Socket {
 }
 
 export function connectSocket(token?: string): Socket {
-  const socket = getSocket(token);
-  if (token) {
-    socket.auth = { sessionToken: token };
+  const currentToken = token || getStoredSessionToken();
+  const socket = getSocket(currentToken || undefined);
+
+  if (currentToken) {
+    socket.auth = { sessionToken: currentToken };
   }
+
   if (!socket.connected) {
     socket.connect();
+  } else if (currentToken) {
+    // If already connected, notify backend to update session identity
+    socket.emit("authenticate", { sessionToken: currentToken });
   }
+
   return socket;
 }
 

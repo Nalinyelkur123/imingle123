@@ -22,7 +22,7 @@ export interface AnonymousSession {
 export function getStoredSessionToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return sessionStorage.getItem(SESSION_STORAGE_KEY);
+    return localStorage.getItem(SESSION_STORAGE_KEY) || sessionStorage.getItem(SESSION_STORAGE_KEY);
   } catch {
     return null;
   }
@@ -31,7 +31,7 @@ export function getStoredSessionToken(): string | null {
 export function getStoredSessionId(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return sessionStorage.getItem(SESSION_ID_KEY);
+    return localStorage.getItem(SESSION_ID_KEY) || sessionStorage.getItem(SESSION_ID_KEY);
   } catch {
     return null;
   }
@@ -40,6 +40,8 @@ export function getStoredSessionId(): string | null {
 export function clearStoredSession(): void {
   if (typeof window === "undefined") return;
   try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem(SESSION_ID_KEY);
     sessionStorage.removeItem(SESSION_STORAGE_KEY);
     sessionStorage.removeItem(SESSION_ID_KEY);
   } catch {
@@ -95,10 +97,12 @@ export async function initAnonymousSession(
 
       if (typeof window !== "undefined") {
         try {
+          localStorage.setItem(SESSION_STORAGE_KEY, sessionData.sessionToken);
+          localStorage.setItem(SESSION_ID_KEY, sessionData.sessionId);
           sessionStorage.setItem(SESSION_STORAGE_KEY, sessionData.sessionToken);
           sessionStorage.setItem(SESSION_ID_KEY, sessionData.sessionId);
         } catch {
-          // sessionStorage may fail in private mode if restricted
+          // storage may fail in private mode if restricted
         }
       }
 

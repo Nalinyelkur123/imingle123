@@ -19,7 +19,7 @@ export function HomeHeroInteraction() {
   const [interests, saveInterests] = useInterests();
   const [inputValue, setInputValue] = useState("");
   const [activeMode, setActiveMode] = useState<"video" | "text">("video");
-  const [onlineCount, setOnlineCount] = useState<string>("12,500+");
+  const [onlineCount, setOnlineCount] = useState<string>("0");
 
   useEffect(() => {
     fetchLiveStats().then((data) => {

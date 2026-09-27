@@ -149,14 +149,15 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     if (iceCandidateQueueRef.current.length > 0) {
       console.log(`[ICE] Flushing ${iceCandidateQueueRef.current.length} queued candidates`);
     }
-    while (iceCandidateQueueRef.current.length > 0) {
-      const candidateInit = iceCandidateQueueRef.current.shift();
+    const candidates = [...iceCandidateQueueRef.current];
+    iceCandidateQueueRef.current = [];
+    for (const candidateInit of candidates) {
       if (candidateInit && candidateInit.candidate) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidateInit));
           console.log("[ICE] Queued candidate applied successfully");
         } catch (err) {
-          console.warn("[ICE] Error applying queued candidate:", err);
+          console.warn("[ICE] Handled error applying queued candidate:", err);
         }
       }
     }
@@ -172,9 +173,11 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   });
 
   // Clean up WebRTC peer connection
-  const cleanupPeerConnection = useCallback(() => {
-    iceCandidateQueueRef.current = [];
-    pendingOfferRef.current = null;
+  const cleanupPeerConnection = useCallback((clearQueues = false) => {
+    if (clearQueues) {
+      iceCandidateQueueRef.current = [];
+      pendingOfferRef.current = null;
+    }
     if (peerConnectionRef.current) {
       peerConnectionRef.current.onicecandidate = null;
       peerConnectionRef.current.ontrack = null;
@@ -182,11 +185,15 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       peerConnectionRef.current.onicegatheringstatechange = null;
       peerConnectionRef.current.onconnectionstatechange = null;
       peerConnectionRef.current.onsignalingstatechange = null;
-      peerConnectionRef.current.close();
+      try {
+        peerConnectionRef.current.close();
+      } catch {}
       peerConnectionRef.current = null;
     }
     if (remoteMediaStreamRef.current) {
-      remoteMediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      try {
+        remoteMediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      } catch {}
       remoteMediaStreamRef.current = null;
     }
     if (remoteVideoRef.current) {
@@ -205,8 +212,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
     console.log("[WEBRTC] getUserMedia started");
 
-    // Check for Secure Context requirement
-    // In modern browsers, getUserMedia is ONLY available in Secure Contexts (HTTPS or localhost)
+    // Check for Secure Context requirement (HTTPS or localhost)
     if (!window.isSecureContext && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
       console.warn("[WEBRTC] getUserMedia failed: Insecure context. WebRTC requires HTTPS or localhost.");
       setCameraStatus("insecure_context");
@@ -251,7 +257,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
           localVideoRef.current.play().catch(() => {});
         }
 
-        // Dynamically replace or attach tracks to active RTCPeerConnection if one is negotiating
+        // Dynamically attach tracks to active RTCPeerConnection if one is negotiating
         const pc = peerConnectionRef.current;
         if (pc && pc.connectionState !== "closed") {
           const videoTrack = stream.getVideoTracks()[0];
@@ -262,8 +268,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
           let audioAttached = false;
 
           transceivers.forEach((t) => {
-            const isVideo = t.receiver.track.kind === "video" || t.sender.track?.kind === "video";
-            const isAudio = t.receiver.track.kind === "audio" || t.sender.track?.kind === "audio";
+            const isVideo = t.receiver.track?.kind === "video" || t.sender.track?.kind === "video";
+            const isAudio = t.receiver.track?.kind === "audio" || t.sender.track?.kind === "audio";
             if (isVideo && videoTrack) {
               t.sender.replaceTrack(videoTrack).catch(() => {});
               t.direction = "sendrecv";
@@ -333,7 +339,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         localStreamRef.current.getTracks().forEach((track) => track.stop());
         localStreamRef.current = null;
       }
-      cleanupPeerConnection();
+      cleanupPeerConnection(true);
     };
   }, [requestCameraAccess, cleanupPeerConnection]);
 
@@ -371,7 +377,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   const setupPeerConnection = useCallback(
     async (isInitiator: boolean) => {
       if (mode !== "video") return;
-      cleanupPeerConnection();
+      cleanupPeerConnection(false);
 
       const socket = connectSocket();
       const pcConfig: RTCConfiguration = {
@@ -384,45 +390,24 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       const pc = new RTCPeerConnection(pcConfig);
       peerConnectionRef.current = pc;
 
-      // Ensure localStream is available
-      let stream = localStreamRef.current;
-      if (!stream && typeof window !== "undefined" && navigator.mediaDevices?.getUserMedia) {
-        try {
-          console.log("[WEBRTC] getUserMedia requested in setupPeerConnection");
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-            audio: true,
-          });
-          localStreamRef.current = stream;
-          setCameraStatus("ready");
-          setCameraErrorMessage("");
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = stream;
-            localVideoRef.current.play().catch(() => {});
-          }
-        } catch {
-          // ignore
-        }
-      }
-
+      // Ensure localStream tracks are attached
+      const stream = localStreamRef.current;
       if (stream) {
         stream.getTracks().forEach((track) => {
           try {
-            pc.addTrack(track, stream!);
+            pc.addTrack(track, stream);
           } catch {
             // track already added
           }
         });
         console.log("[WEBRTC] local tracks added to peer connection:", stream.getTracks().map((t) => t.kind));
       } else {
-        // Pre-allocate transceivers to guarantee SDP includes media tracks even if getUserMedia is delayed
+        // Pre-allocate transceivers to ensure SDP negotiation succeeds
         try {
           pc.addTransceiver("video", { direction: "sendrecv" });
           pc.addTransceiver("audio", { direction: "sendrecv" });
-          console.log("[WEBRTC] Transceivers pre-allocated (sendrecv) awaiting stream");
-        } catch {
-          // ignore
-        }
+          console.log("[WEBRTC] Transceivers pre-allocated (sendrecv)");
+        } catch {}
       }
 
       pc.ontrack = (event) => {
@@ -444,10 +429,12 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             }
           });
         }
-        if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
-          remoteVideoRef.current.srcObject = remoteStream;
+        if (remoteVideoRef.current) {
+          if (remoteVideoRef.current.srcObject !== remoteStream) {
+            remoteVideoRef.current.srcObject = remoteStream;
+          }
           remoteVideoRef.current.play().catch((err) => {
-            console.warn("[MEDIA] Remote video playback waiting for interaction:", err);
+            console.warn("[MEDIA] Remote video playback waiting for user gesture:", err);
           });
         }
         console.log("[MEDIA] remote stream attached. Total tracks:", remoteStream.getTracks().length);
@@ -470,7 +457,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         const state = pc.iceConnectionState;
         console.log("[ICE] iceConnectionState changed:", state);
         if (state === "failed") {
-          console.warn("[ICE] connection state failed, attempting ICE restart...");
+          console.warn("[ICE] connection state failed, restarting ICE...");
           if (pc.restartIce) {
             pc.restartIce();
           }
@@ -494,44 +481,13 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         const pending = pendingOfferRef.current;
         pendingOfferRef.current = null;
         try {
-          console.log("[SIGNALING] Applying pending offer in setupPeerConnection");
+          console.log("[SIGNALING] Applying buffered offer in setupPeerConnection");
           await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: pending.sdp }));
           await flushIceCandidates(pc);
 
-          // Attach local tracks if ready
-          if (localStreamRef.current) {
-            const currentStream = localStreamRef.current;
-            const videoTrack = currentStream.getVideoTracks()[0];
-            const audioTrack = currentStream.getAudioTracks()[0];
-            const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
-            let videoDone = false;
-            let audioDone = false;
-
-            transceivers.forEach((t) => {
-              const isVideo = t.receiver.track.kind === "video" || t.sender.track?.kind === "video";
-              const isAudio = t.receiver.track.kind === "audio" || t.sender.track?.kind === "audio";
-              if (isVideo && videoTrack) {
-                t.sender.replaceTrack(videoTrack).catch(() => {});
-                t.direction = "sendrecv";
-                videoDone = true;
-              } else if (isAudio && audioTrack) {
-                t.sender.replaceTrack(audioTrack).catch(() => {});
-                t.direction = "sendrecv";
-                audioDone = true;
-              }
-            });
-
-            if (!videoDone && videoTrack) {
-              try { pc.addTrack(videoTrack, currentStream); } catch {}
-            }
-            if (!audioDone && audioTrack) {
-              try { pc.addTrack(audioTrack, currentStream); } catch {}
-            }
-          }
-
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          console.log("[SIGNALING] answer sent (from buffered offer)");
+          console.log("[SIGNALING] answer sent to partner (from buffered offer)");
           socket.emit(SocketEvents.WEBRTC_ANSWER, {
             matchId: currentMatchRef.current?.matchId || pending.matchId,
             sdp: answer.sdp || "",
@@ -562,7 +518,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
   // Start chat - join matchmaking queue
   const startChat = useCallback(() => {
-    cleanupPeerConnection();
+    cleanupPeerConnection(true);
     currentMatchRef.current = null;
     setCurrentMatch(null);
     setSharedInterest(null);
@@ -594,7 +550,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
   // Next stranger
   const handleNext = useCallback(() => {
-    cleanupPeerConnection();
+    cleanupPeerConnection(true);
     const socket = connectSocket();
     socket.emit(SocketEvents.NEXT);
     setStopConfirm(false);
@@ -611,7 +567,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       return;
     }
     setStopConfirm(false);
-    cleanupPeerConnection();
+    cleanupPeerConnection(true);
     const socket = connectSocket();
     socket.emit(SocketEvents.STOP);
     currentMatchRef.current = null;
@@ -820,13 +776,18 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         return;
       }
       try {
-        if (pc.signalingState !== "stable") {
-          await Promise.all([
-            pc.setLocalDescription({ type: "rollback" }).catch(() => {}),
-          ]);
+        if (pc.signalingState !== "stable" && pc.signalingState !== "have-remote-offer") {
+          try {
+            await pc.setLocalDescription({ type: "rollback" });
+          } catch {}
         }
 
-        // Attach local stream tracks to transceivers if ready before answering
+        await pc.setRemoteDescription(
+          new RTCSessionDescription({ type: "offer", sdp: payload.sdp })
+        );
+        await flushIceCandidates(pc);
+
+        // Ensure local stream tracks are attached to sender transceivers if ready
         if (localStreamRef.current) {
           const stream = localStreamRef.current;
           const videoTrack = stream.getVideoTracks()[0];
@@ -836,8 +797,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
           let audioAttached = false;
 
           transceivers.forEach((t) => {
-            const isVideo = t.receiver.track.kind === "video" || t.sender.track?.kind === "video";
-            const isAudio = t.receiver.track.kind === "audio" || t.sender.track?.kind === "audio";
+            const isVideo = t.receiver.track?.kind === "video" || t.sender.track?.kind === "video";
+            const isAudio = t.receiver.track?.kind === "audio" || t.sender.track?.kind === "audio";
             if (isVideo && videoTrack) {
               t.sender.replaceTrack(videoTrack).catch(() => {});
               t.direction = "sendrecv";
@@ -857,10 +818,6 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
           }
         }
 
-        await pc.setRemoteDescription(
-          new RTCSessionDescription({ type: "offer", sdp: payload.sdp })
-        );
-        await flushIceCandidates(pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         console.log("[SIGNALING] answer sent to partner");
@@ -898,8 +855,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
       const candidateInit: RTCIceCandidateInit = {
         candidate: payload.candidate,
-        sdpMLineIndex: payload.sdpMLineIndex,
-        sdpMid: payload.sdpMid,
+        sdpMLineIndex: payload.sdpMLineIndex !== undefined ? payload.sdpMLineIndex : null,
+        sdpMid: payload.sdpMid !== undefined ? payload.sdpMid : null,
       };
       const pc = peerConnectionRef.current;
       if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
@@ -935,7 +892,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     };
 
     const handleMatchEnded = (payload?: MatchEndedPayload) => {
-      cleanupPeerConnection();
+      cleanupPeerConnection(true);
       currentMatchRef.current = null;
       setCurrentMatch(null);
       setPeerReconnecting(false);
@@ -1157,6 +1114,11 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                 {/* 1. STRANGER / REMOTE VIDEO CARD */}
                 <div
                   ref={remoteVideoContainerRef}
+                  onClick={() => {
+                    if (remoteVideoRef.current && remoteStreamActive) {
+                      remoteVideoRef.current.play().catch(() => {});
+                    }
+                  }}
                   className="relative w-full h-full md:h-auto md:flex-1 md:basis-0 min-h-0 overflow-hidden rounded-2xl sm:rounded-3xl border border-gray-200/90 dark:border-white/10 bg-[#3f3f46] dark:bg-[#2b2b33] flex items-center justify-center shadow-2xs select-none"
                 >
                   {/* Stranger Reconnecting Grace Period Overlay */}
