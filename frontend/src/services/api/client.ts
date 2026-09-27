@@ -93,7 +93,6 @@ export async function fetchIceServers(): Promise<RTCIceServer[]> {
       }
     }
   } catch {
-    // Graceful fallback to default STUN + OpenRelay TURN servers
   }
 
   return fallbackServers;

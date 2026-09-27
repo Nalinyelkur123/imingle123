@@ -34,19 +34,19 @@ export function getIceServers(): ICEServer[] {
     if (env.TURN_USERNAME) turnServer.username = env.TURN_USERNAME;
     if (env.TURN_PASSWORD) turnServer.credential = env.TURN_PASSWORD;
     servers.push(turnServer);
+  } else {
+    // Provide OpenRelay public STUN/TURN fallback servers (UDP 80, UDP 443, TLS TCP 443)
+    // to guarantee WebRTC NAT traversal across cellular CGNAT, Symmetric NAT, and different ISPs
+    servers.push({
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turns:openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: 'openrelay',
+      credential: 'openrelay',
+    });
   }
-
-  // Always provide robust OpenRelay public STUN/TURN servers (UDP 80, UDP 443, and TLS TCP 443)
-  // to guarantee WebRTC NAT traversal across cellular CGNAT, Symmetric NAT, and different ISPs
-  servers.push({
-    urls: [
-      'turn:openrelay.metered.ca:80',
-      'turn:openrelay.metered.ca:443',
-      'turns:openrelay.metered.ca:443?transport=tcp',
-    ],
-    username: 'openrelay',
-    credential: 'openrelay',
-  });
 
   return servers;
 }

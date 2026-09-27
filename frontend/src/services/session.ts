@@ -22,7 +22,7 @@ export interface AnonymousSession {
 export function getStoredSessionToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return localStorage.getItem(SESSION_STORAGE_KEY) || sessionStorage.getItem(SESSION_STORAGE_KEY);
+    return sessionStorage.getItem(SESSION_STORAGE_KEY) || localStorage.getItem(SESSION_STORAGE_KEY);
   } catch {
     return null;
   }
@@ -31,7 +31,7 @@ export function getStoredSessionToken(): string | null {
 export function getStoredSessionId(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return localStorage.getItem(SESSION_ID_KEY) || sessionStorage.getItem(SESSION_ID_KEY);
+    return sessionStorage.getItem(SESSION_ID_KEY) || localStorage.getItem(SESSION_ID_KEY);
   } catch {
     return null;
   }
@@ -40,10 +40,10 @@ export function getStoredSessionId(): string | null {
 export function clearStoredSession(): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
-    localStorage.removeItem(SESSION_ID_KEY);
     sessionStorage.removeItem(SESSION_STORAGE_KEY);
     sessionStorage.removeItem(SESSION_ID_KEY);
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem(SESSION_ID_KEY);
   } catch {
     // Graceful fallback
   }
