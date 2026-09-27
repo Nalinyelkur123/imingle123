@@ -1,7 +1,8 @@
+const PROD_BACKEND_URL = "https://imingle-backend.onrender.com";
 
 export function getApiBaseUrl(): string {
   if (typeof window !== "undefined") {
-    const { hostname, protocol, origin } = window.location;
+    const { hostname, protocol } = window.location;
     const envUrl = process.env.NEXT_PUBLIC_API_URL;
 
     // 1. If an explicit API URL is configured, use it
@@ -26,11 +27,11 @@ export function getApiBaseUrl(): string {
       return `${protocol}//${hostname}:3001`;
     }
 
-    // 4. Default dynamically to configured env URL or current origin
-    return envUrl || origin;
+    // 4. In production (e.g. vmingle.in on Cloudflare Pages), connect to the live backend server
+    return envUrl || PROD_BACKEND_URL;
   }
 
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+  return process.env.NEXT_PUBLIC_API_URL || PROD_BACKEND_URL;
 }
 
 /**
@@ -38,7 +39,7 @@ export function getApiBaseUrl(): string {
  */
 export function getWsUrl(): string {
   if (typeof window !== "undefined") {
-    const { hostname, protocol, origin } = window.location;
+    const { hostname, protocol } = window.location;
     const envUrl = process.env.NEXT_PUBLIC_WS_URL;
 
     // 1. If an explicit WebSocket URL is configured, use it
@@ -64,11 +65,11 @@ export function getWsUrl(): string {
       return `${wsProtocol}//${hostname}:3001`;
     }
 
-    // 4. Default dynamically to configured env URL or current origin
-    return envUrl || origin;
+    // 4. In production (e.g. vmingle.in on Cloudflare Pages), connect to the live backend server
+    return envUrl || PROD_BACKEND_URL;
   }
 
-  return process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3001";
+  return process.env.NEXT_PUBLIC_WS_URL || PROD_BACKEND_URL;
 }
 
 

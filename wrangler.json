@@ -5,6 +5,8 @@
     "directory": "./frontend/out"
   },
   "vars": {
-    "NEXT_PUBLIC_SITE_URL": "https://vmingle.in"
+    "NEXT_PUBLIC_SITE_URL": "https://vmingle.in",
+    "NEXT_PUBLIC_API_URL": "https://imingle-backend.onrender.com",
+    "NEXT_PUBLIC_WS_URL": "https://imingle-backend.onrender.com"
   }
 }
