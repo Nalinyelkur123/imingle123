@@ -24,8 +24,14 @@ export const corsOptions: cors.CorsOptions = {
   origin: (requestOrigin, callback) => {
     // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
     if (!requestOrigin) return callback(null, true);
+
+    // In development mode or if CORS_ORIGIN contains wildcard, allow all origins
+    if (env.NODE_ENV !== 'production' && (env.CORS_ORIGIN.includes('*') || !env.CORS_ORIGIN)) {
+      return callback(null, true);
+    }
+
     const allowed = env.CORS_ORIGIN.split(',').map((o) => o.trim());
-    
+
     if (
       allowed.includes('*') ||
       allowed.includes(requestOrigin) ||
@@ -33,10 +39,34 @@ export const corsOptions: cors.CorsOptions = {
     ) {
       return callback(null, true);
     }
-    
+
     try {
-      const hostname = new URL(requestOrigin).hostname;
-      if (hostname.endsWith('.vmingle.in') || hostname.endsWith('.pages.dev')) {
+      const url = new URL(requestOrigin);
+      const hostname = url.hostname;
+
+      // Allow production domains and common deployment/tunnel domains
+      if (
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname.endsWith('.vmingle.in') ||
+        hostname.endsWith('.vmingle.com') ||
+        hostname.endsWith('.pages.dev') ||
+        hostname.endsWith('.vercel.app') ||
+        hostname.endsWith('.ngrok-free.app') ||
+        hostname.endsWith('.ngrok.io') ||
+        hostname.endsWith('.loca.lt') ||
+        hostname.endsWith('.trycloudflare.com')
+      ) {
+        return callback(null, true);
+      }
+
+      // Allow private LAN IPv4 addresses (192.168.x.x, 10.x.x.x, 172.16-31.x.x) for local multi-device testing
+      const isPrivateLanIp =
+        /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+        /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+        /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname);
+
+      if (isPrivateLanIp) {
         return callback(null, true);
       }
     } catch {

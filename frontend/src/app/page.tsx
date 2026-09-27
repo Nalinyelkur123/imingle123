@@ -4,7 +4,7 @@ import { MingleeHeader } from "@/components/MingleeHeader";
 import { MingleeFooter } from "@/components/MingleeFooter";
 import { HomeHeroInteraction } from "@/components/HomeHeroInteraction";
 import { HomeFaqAccordion } from "@/components/HomeFaqAccordion";
-import { constructMetadata, getFaqSchema, SITE_CONFIG } from "@/config/site";
+import { constructMetadata, getFaqSchema } from "@/config/site";
 
 export const metadata: Metadata = constructMetadata({
   title: "Random Video Chat & Text Chat with Strangers",

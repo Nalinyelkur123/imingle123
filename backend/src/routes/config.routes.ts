@@ -22,25 +22,31 @@ export function getIceServers(): ICEServer[] {
     },
   ];
 
-  if (env.TURN_SERVER_URL) {
-    const urls = env.TURN_SERVER_URL.split(',').map((u) => u.trim());
+  // If a valid production TURN server is configured (ignoring dummy localhost configs)
+  const isRealTurnUrl =
+    env.TURN_SERVER_URL &&
+    !env.TURN_SERVER_URL.includes('localhost') &&
+    !env.TURN_SERVER_URL.includes('127.0.0.1');
+
+  if (isRealTurnUrl) {
+    const urls = env.TURN_SERVER_URL!.split(',').map((u) => u.trim());
     const turnServer: ICEServer = { urls };
     if (env.TURN_USERNAME) turnServer.username = env.TURN_USERNAME;
     if (env.TURN_PASSWORD) turnServer.credential = env.TURN_PASSWORD;
     servers.push(turnServer);
-  } else {
-    // Development and public fallback: OpenRelay public STUN/TURN servers
-    // Guarantees WebRTC connectivity across different Wi-Fi networks, cellular CGNAT, and Symmetric NAT environments
-    servers.push({
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turns:openrelay.metered.ca:443?transport=tcp',
-      ],
-      username: 'openrelay',
-      credential: 'openrelay',
-    });
   }
+
+  // Always provide robust OpenRelay public STUN/TURN servers (UDP 80, UDP 443, and TLS TCP 443)
+  // to guarantee WebRTC NAT traversal across cellular CGNAT, Symmetric NAT, and different ISPs
+  servers.push({
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turns:openrelay.metered.ca:443?transport=tcp',
+    ],
+    username: 'openrelay',
+    credential: 'openrelay',
+  });
 
   return servers;
 }

@@ -104,7 +104,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   // Local media controls & status
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isMirrored, setIsMirrored] = useState(true);
-  const [cameraStatus, setCameraStatus] = useState<"loading" | "ready" | "denied">("loading");
+  const [cameraStatus, setCameraStatus] = useState<"loading" | "ready" | "denied" | "insecure_context">("loading");
+  const [cameraErrorMessage, setCameraErrorMessage] = useState<string>("");
 
   // Mobile layout switch (PiP vs Split view on small screens)
   const [mobileViewMode, setMobileViewMode] = useState<"pip" | "split">("pip");
@@ -145,13 +146,17 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
   // Flush queued ICE candidates after remoteDescription is set
   const flushIceCandidates = useCallback(async (pc: RTCPeerConnection) => {
+    if (iceCandidateQueueRef.current.length > 0) {
+      console.log(`[ICE] Flushing ${iceCandidateQueueRef.current.length} queued candidates`);
+    }
     while (iceCandidateQueueRef.current.length > 0) {
       const candidateInit = iceCandidateQueueRef.current.shift();
-      if (candidateInit) {
+      if (candidateInit && candidateInit.candidate) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidateInit));
-        } catch {
-          // Handled gracefully
+          console.log("[ICE] Queued candidate applied successfully");
+        } catch (err) {
+          console.warn("[ICE] Error applying queued candidate:", err);
         }
       }
     }
@@ -174,7 +179,9 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       peerConnectionRef.current.onicecandidate = null;
       peerConnectionRef.current.ontrack = null;
       peerConnectionRef.current.oniceconnectionstatechange = null;
+      peerConnectionRef.current.onicegatheringstatechange = null;
       peerConnectionRef.current.onconnectionstatechange = null;
+      peerConnectionRef.current.onsignalingstatechange = null;
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
@@ -192,10 +199,29 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   const requestCameraAccess = useCallback(() => {
     if (mode !== "video") return;
     setCameraStatus("loading");
+    setCameraErrorMessage("");
 
-    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      console.warn("getUserMedia is not supported on this browser/environment");
+    if (typeof window === "undefined") return;
+
+    console.log("[WEBRTC] getUserMedia started");
+
+    // Check for Secure Context requirement
+    // In modern browsers, getUserMedia is ONLY available in Secure Contexts (HTTPS or localhost)
+    if (!window.isSecureContext && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+      console.warn("[WEBRTC] getUserMedia failed: Insecure context. WebRTC requires HTTPS or localhost.");
+      setCameraStatus("insecure_context");
+      setCameraErrorMessage(
+        "Camera & microphone access requires HTTPS when accessed from other devices or networks. Please access via HTTPS or a secure tunnel (e.g. Cloudflare / ngrok)."
+      );
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      console.warn("[WEBRTC] getUserMedia failed: mediaDevices.getUserMedia not supported on this browser.");
       setCameraStatus("denied");
+      setCameraErrorMessage(
+        "Your browser does not support camera/microphone access in this context. Please use a modern browser (Chrome, Safari, Firefox, Edge) over HTTPS."
+      );
       return;
     }
 
@@ -216,29 +242,63 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
     tryGetUserMedia()
       .then((stream) => {
+        console.log("[WEBRTC] getUserMedia success. Active stream:", stream.id);
         localStreamRef.current = stream;
         setCameraStatus("ready");
+        setCameraErrorMessage("");
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
           localVideoRef.current.play().catch(() => {});
         }
+
         // Dynamically replace or attach tracks to active RTCPeerConnection if one is negotiating
         const pc = peerConnectionRef.current;
         if (pc && pc.connectionState !== "closed") {
           const videoTrack = stream.getVideoTracks()[0];
           const audioTrack = stream.getAudioTracks()[0];
-          pc.getSenders().forEach((sender) => {
-            if (sender.track?.kind === "video" && videoTrack) {
-              sender.replaceTrack(videoTrack).catch(() => {});
-            } else if (sender.track?.kind === "audio" && audioTrack) {
-              sender.replaceTrack(audioTrack).catch(() => {});
+
+          const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+          let videoAttached = false;
+          let audioAttached = false;
+
+          transceivers.forEach((t) => {
+            const isVideo = t.receiver.track.kind === "video" || t.sender.track?.kind === "video";
+            const isAudio = t.receiver.track.kind === "audio" || t.sender.track?.kind === "audio";
+            if (isVideo && videoTrack) {
+              t.sender.replaceTrack(videoTrack).catch(() => {});
+              t.direction = "sendrecv";
+              videoAttached = true;
+            } else if (isAudio && audioTrack) {
+              t.sender.replaceTrack(audioTrack).catch(() => {});
+              t.direction = "sendrecv";
+              audioAttached = true;
             }
           });
+
+          if (!videoAttached && videoTrack) {
+            try { pc.addTrack(videoTrack, stream); } catch {}
+          }
+          if (!audioAttached && audioTrack) {
+            try { pc.addTrack(audioTrack, stream); } catch {}
+          }
+          console.log("[WEBRTC] local tracks added to active peer connection");
         }
       })
-      .catch((err) => {
-        console.warn("Camera/microphone access denied or unavailable:", err);
+      .catch((err: unknown) => {
+        console.warn("[WEBRTC] getUserMedia failed:", err);
         setCameraStatus("denied");
+        const errorName = err instanceof Error ? err.name : "";
+        if (errorName === "NotAllowedError" || errorName === "PermissionDeniedError") {
+          setCameraErrorMessage(
+            "Camera and microphone permission was denied. Please click the camera/lock icon in your browser address bar to allow permissions, then click Retry."
+          );
+        } else if (errorName === "NotFoundError" || errorName === "DevicesNotFoundError") {
+          setCameraErrorMessage("No camera or microphone hardware found on this device.");
+        } else if (errorName === "NotReadableError" || errorName === "TrackStartError") {
+          setCameraErrorMessage("Camera or microphone is already in use by another app (e.g. Zoom, FaceTime). Please close other apps and retry.");
+        } else {
+          setCameraErrorMessage("Camera access is required for video calls. Please allow camera permission in your browser settings.");
+        }
       });
   }, [mode]);
 
@@ -251,6 +311,16 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       }
     }
   }, [cameraStatus]);
+
+  // Ensure remote video element srcObject is bound whenever remote stream becomes active
+  useEffect(() => {
+    if (remoteStreamActive && remoteVideoRef.current && remoteMediaStreamRef.current) {
+      if (remoteVideoRef.current.srcObject !== remoteMediaStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteMediaStreamRef.current;
+        remoteVideoRef.current.play().catch(() => {});
+      }
+    }
+  }, [remoteStreamActive]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -310,6 +380,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         bundlePolicy: "max-bundle",
         iceTransportPolicy: "all",
       };
+      console.log("[WEBRTC] Initializing RTCPeerConnection (isInitiator:", isInitiator, ")");
       const pc = new RTCPeerConnection(pcConfig);
       peerConnectionRef.current = pc;
 
@@ -317,12 +388,14 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       let stream = localStreamRef.current;
       if (!stream && typeof window !== "undefined" && navigator.mediaDevices?.getUserMedia) {
         try {
+          console.log("[WEBRTC] getUserMedia requested in setupPeerConnection");
           stream = await navigator.mediaDevices.getUserMedia({
             video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
             audio: true,
           });
           localStreamRef.current = stream;
           setCameraStatus("ready");
+          setCameraErrorMessage("");
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = stream;
             localVideoRef.current.play().catch(() => {});
@@ -340,17 +413,20 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             // track already added
           }
         });
+        console.log("[WEBRTC] local tracks added to peer connection:", stream.getTracks().map((t) => t.kind));
       } else {
         // Pre-allocate transceivers to guarantee SDP includes media tracks even if getUserMedia is delayed
         try {
           pc.addTransceiver("video", { direction: "sendrecv" });
           pc.addTransceiver("audio", { direction: "sendrecv" });
+          console.log("[WEBRTC] Transceivers pre-allocated (sendrecv) awaiting stream");
         } catch {
           // ignore
         }
       }
 
       pc.ontrack = (event) => {
+        console.log("[MEDIA] ontrack received:", event.track?.kind, "ID:", event.track?.id);
         let remoteStream = remoteMediaStreamRef.current;
         if (!remoteStream) {
           remoteStream = new MediaStream();
@@ -370,13 +446,17 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         }
         if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
           remoteVideoRef.current.srcObject = remoteStream;
-          remoteVideoRef.current.play().catch(() => {});
+          remoteVideoRef.current.play().catch((err) => {
+            console.warn("[MEDIA] Remote video playback waiting for interaction:", err);
+          });
         }
+        console.log("[MEDIA] remote stream attached. Total tracks:", remoteStream.getTracks().length);
         setRemoteStreamActive(true);
       };
 
       pc.onicecandidate = (event) => {
-        if (event.candidate) {
+        if (event.candidate && event.candidate.candidate) {
+          console.log("[SIGNALING] ICE candidate sent:", event.candidate.candidate.substring(0, 48), "...");
           socket.emit(SocketEvents.ICE_CANDIDATE, {
             matchId: currentMatchRef.current?.matchId,
             candidate: event.candidate.candidate,
@@ -388,12 +468,25 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
       pc.oniceconnectionstatechange = () => {
         const state = pc.iceConnectionState;
+        console.log("[ICE] iceConnectionState changed:", state);
         if (state === "failed") {
-          console.warn("[WebRTC] ICE connection state is failed. Attempting ICE restart...");
+          console.warn("[ICE] connection state failed, attempting ICE restart...");
           if (pc.restartIce) {
             pc.restartIce();
           }
         }
+      };
+
+      pc.onicegatheringstatechange = () => {
+        console.log("[ICE] iceGatheringState changed:", pc.iceGatheringState);
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log("[PEER] connectionState changed:", pc.connectionState);
+      };
+
+      pc.onsignalingstatechange = () => {
+        console.log("[PEER] signalingState changed:", pc.signalingState);
       };
 
       // Check if an offer already arrived while peerConnection was being constructed
@@ -401,10 +494,44 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         const pending = pendingOfferRef.current;
         pendingOfferRef.current = null;
         try {
+          console.log("[SIGNALING] Applying pending offer in setupPeerConnection");
           await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: pending.sdp }));
           await flushIceCandidates(pc);
+
+          // Attach local tracks if ready
+          if (localStreamRef.current) {
+            const currentStream = localStreamRef.current;
+            const videoTrack = currentStream.getVideoTracks()[0];
+            const audioTrack = currentStream.getAudioTracks()[0];
+            const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+            let videoDone = false;
+            let audioDone = false;
+
+            transceivers.forEach((t) => {
+              const isVideo = t.receiver.track.kind === "video" || t.sender.track?.kind === "video";
+              const isAudio = t.receiver.track.kind === "audio" || t.sender.track?.kind === "audio";
+              if (isVideo && videoTrack) {
+                t.sender.replaceTrack(videoTrack).catch(() => {});
+                t.direction = "sendrecv";
+                videoDone = true;
+              } else if (isAudio && audioTrack) {
+                t.sender.replaceTrack(audioTrack).catch(() => {});
+                t.direction = "sendrecv";
+                audioDone = true;
+              }
+            });
+
+            if (!videoDone && videoTrack) {
+              try { pc.addTrack(videoTrack, currentStream); } catch {}
+            }
+            if (!audioDone && audioTrack) {
+              try { pc.addTrack(audioTrack, currentStream); } catch {}
+            }
+          }
+
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
+          console.log("[SIGNALING] answer sent (from buffered offer)");
           socket.emit(SocketEvents.WEBRTC_ANSWER, {
             matchId: currentMatchRef.current?.matchId || pending.matchId,
             sdp: answer.sdp || "",
@@ -414,11 +541,13 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         }
       } else if (isInitiator) {
         try {
+          console.log("[SIGNALING] Creating offer as initiator");
           const offer = await pc.createOffer({
             offerToReceiveAudio: true,
             offerToReceiveVideo: true,
           });
           await pc.setLocalDescription(offer);
+          console.log("[SIGNALING] offer sent to partner");
           socket.emit(SocketEvents.WEBRTC_OFFER, {
             matchId: currentMatchRef.current?.matchId,
             sdp: offer.sdp || "",
@@ -683,8 +812,10 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
     const handleWebRTCOffer = async (payload: WebRTCOfferPayload) => {
       if (mode !== "video") return;
+      console.log("[SIGNALING] offer received from partner");
       const pc = peerConnectionRef.current;
       if (!pc) {
+        console.log("[SIGNALING] peerConnection not ready yet, queuing incoming offer");
         pendingOfferRef.current = payload;
         return;
       }
@@ -694,12 +825,45 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             pc.setLocalDescription({ type: "rollback" }).catch(() => {}),
           ]);
         }
+
+        // Attach local stream tracks to transceivers if ready before answering
+        if (localStreamRef.current) {
+          const stream = localStreamRef.current;
+          const videoTrack = stream.getVideoTracks()[0];
+          const audioTrack = stream.getAudioTracks()[0];
+          const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+          let videoAttached = false;
+          let audioAttached = false;
+
+          transceivers.forEach((t) => {
+            const isVideo = t.receiver.track.kind === "video" || t.sender.track?.kind === "video";
+            const isAudio = t.receiver.track.kind === "audio" || t.sender.track?.kind === "audio";
+            if (isVideo && videoTrack) {
+              t.sender.replaceTrack(videoTrack).catch(() => {});
+              t.direction = "sendrecv";
+              videoAttached = true;
+            } else if (isAudio && audioTrack) {
+              t.sender.replaceTrack(audioTrack).catch(() => {});
+              t.direction = "sendrecv";
+              audioAttached = true;
+            }
+          });
+
+          if (!videoAttached && videoTrack) {
+            try { pc.addTrack(videoTrack, stream); } catch {}
+          }
+          if (!audioAttached && audioTrack) {
+            try { pc.addTrack(audioTrack, stream); } catch {}
+          }
+        }
+
         await pc.setRemoteDescription(
           new RTCSessionDescription({ type: "offer", sdp: payload.sdp })
         );
         await flushIceCandidates(pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
+        console.log("[SIGNALING] answer sent to partner");
         socket.emit(SocketEvents.WEBRTC_ANSWER, {
           matchId: currentMatchRef.current?.matchId || payload.matchId,
           sdp: answer.sdp || "",
@@ -711,6 +875,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
     const handleWebRTCAnswer = async (payload: WebRTCAnswerPayload) => {
       if (mode !== "video") return;
+      console.log("[SIGNALING] answer received from partner");
       const pc = peerConnectionRef.current;
       if (!pc) return;
       try {
@@ -719,6 +884,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             new RTCSessionDescription({ type: "answer", sdp: payload.sdp })
           );
           await flushIceCandidates(pc);
+          console.log("[SIGNALING] Remote answer description set successfully");
         }
       } catch (err) {
         console.error("[WebRTC] Error handling answer:", err);
@@ -727,6 +893,9 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
     const handleICECandidate = async (payload: ICECandidatePayload) => {
       if (mode !== "video") return;
+      if (!payload?.candidate) return;
+      console.log("[SIGNALING] ICE candidate received:", payload.candidate.substring(0, 48), "...");
+
       const candidateInit: RTCIceCandidateInit = {
         candidate: payload.candidate,
         sdpMLineIndex: payload.sdpMLineIndex,
@@ -734,12 +903,14 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       };
       const pc = peerConnectionRef.current;
       if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
+        console.log("[ICE] Remote description not set yet, queuing candidate");
         iceCandidateQueueRef.current.push(candidateInit);
       } else {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidateInit));
-        } catch {
-          // Handled gracefully
+          console.log("[ICE] Candidate applied to peer connection");
+        } catch (err) {
+          console.warn("[ICE] Handled error adding candidate:", err);
         }
       }
     };
@@ -1173,20 +1344,46 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     }`}
                   />
 
+                  {/* Camera Permission State: Insecure Context (HTTP across network/IP) */}
+                  {cameraStatus === "insecure_context" && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-30">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20 text-amber-400 mb-1.5">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                        </svg>
+                      </div>
+                      <span className="text-[11px] sm:text-xs font-bold text-white mb-1">HTTPS Required for Camera</span>
+                      <p className="text-[9px] sm:text-[10px] text-amber-200/90 max-w-[210px] leading-tight mb-2">
+                        Browsers block camera &amp; mic over insecure HTTP on other devices. Please connect via HTTPS or a secure tunnel (e.g. Cloudflare / ngrok).
+                      </p>
+                      <button
+                        onClick={requestCameraAccess}
+                        type="button"
+                        className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-[9px] sm:text-[10px] font-bold text-white cursor-pointer shadow-xs"
+                      >
+                        Retry Permission
+                      </button>
+                    </div>
+                  )}
+
                   {/* Camera Permission State: Denied or Not Working */}
                   {cameraStatus === "denied" && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c] p-2 text-center">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-red-500/20 text-red-400 mb-1">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-30">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/20 text-red-400 mb-1.5">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <line x1="1" y1="1" x2="23" y2="23" />
                           <path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34" />
                         </svg>
                       </div>
-                      <span className="text-[9px] sm:text-[10px] font-bold text-gray-300">Camera Disabled</span>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-gray-200 mb-1">Camera Permission Needed</span>
+                      <p className="text-[9px] text-gray-400 max-w-[200px] leading-tight mb-2">
+                        {cameraErrorMessage || "Camera is required for video calls. Allow camera in your browser settings and click Retry."}
+                      </p>
                       <button
                         onClick={requestCameraAccess}
                         type="button"
-                        className="mt-1 px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[9px] font-semibold text-white cursor-pointer"
+                        className="px-2.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[9px] font-semibold text-white cursor-pointer"
                       >
                         Retry
                       </button>

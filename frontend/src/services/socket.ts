@@ -4,16 +4,7 @@
 
 import { io, Socket } from "socket.io-client";
 import { getStoredSessionToken } from "./session";
-
-const WS_URL =
-  process.env.NEXT_PUBLIC_WS_URL ||
-  (typeof window !== "undefined" &&
-  window.location.hostname !== "localhost" &&
-  !window.location.hostname.includes("127.0.0.1")
-    ? "https://imingle-backend.onrender.com"
-    : typeof window !== "undefined"
-      ? `${window.location.protocol}//${window.location.hostname}:3001`
-      : "http://localhost:3001");
+import { getWsUrl } from "./api/config";
 
 let socketInstance: Socket | null = null;
 
@@ -21,7 +12,8 @@ export function getSocket(explicitToken?: string): Socket {
   const token = explicitToken || getStoredSessionToken();
 
   if (!socketInstance) {
-    socketInstance = io(WS_URL, {
+    const wsUrl = getWsUrl();
+    socketInstance = io(wsUrl, {
       autoConnect: false,
       reconnection: true,
       reconnectionAttempts: 15,

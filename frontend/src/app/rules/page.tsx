@@ -2,7 +2,7 @@ import { MingleeHeader } from "@/components/MingleeHeader";
 import { MingleeFooter } from "@/components/MingleeFooter";
 import Link from "next/link";
 import { Metadata } from "next";
-import { constructMetadata, getBreadcrumbSchema } from "@/config/site";
+import { constructMetadata } from "@/config/site";
 
 export const metadata: Metadata = constructMetadata({
   title: "Community Rules & Safety Guidelines",

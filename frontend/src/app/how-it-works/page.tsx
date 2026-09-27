@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { MingleeHeader } from "@/components/MingleeHeader";
 import { MingleeFooter } from "@/components/MingleeFooter";
-import { constructMetadata, getBreadcrumbSchema, SITE_CONFIG } from "@/config/site";
+import { constructMetadata, getBreadcrumbSchema } from "@/config/site";
 
 export const metadata: Metadata = constructMetadata({
   title: "How It Works — Random Video & Text Matchmaking",

@@ -9,15 +9,7 @@
 const SESSION_STORAGE_KEY = "umingle_anonymous_session_token";
 const SESSION_ID_KEY = "umingle_anonymous_session_id";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  (typeof window !== "undefined" &&
-  window.location.hostname !== "localhost" &&
-  !window.location.hostname.includes("127.0.0.1")
-    ? "https://imingle-backend.onrender.com"
-    : typeof window !== "undefined"
-      ? `${window.location.protocol}//${window.location.hostname}:3001`
-      : "http://localhost:3001");
+import { getApiBaseUrl } from "./api/config";
 
 export interface AnonymousSession {
   sessionId: string;
@@ -74,7 +66,7 @@ export async function initAnonymousSession(
   }
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/session/init`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/session/init`, {
       method: "POST",
       headers,
       credentials: "include",
@@ -129,7 +121,7 @@ export async function endAnonymousSession(reason = "user_ended"): Promise<boolea
   if (!token) return true;
 
   try {
-    await fetch(`${API_BASE_URL}/api/session/end`, {
+    await fetch(`${getApiBaseUrl()}/api/session/end`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
