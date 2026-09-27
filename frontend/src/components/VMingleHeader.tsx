@@ -29,13 +29,13 @@ export function VMingleHeader() {
 
   return (
     <header className="sticky top-0 z-50 w-full backdrop-blur-md bg-white/90 border-b border-gray-100 transition-all">
-      <div className="w-full max-w-6xl mx-auto flex items-center justify-between px-6 sm:px-8 lg:px-12 h-20">
+      <div className="w-full max-w-6xl mx-auto flex items-center justify-between px-3 sm:px-6 lg:px-12 h-16 sm:h-20">
         
         {/* Left: Brand Logo & Tagline */}
-        <Link href="/" className="flex items-center gap-3 group select-none shrink-0" id="vmingle-nav-brand">
+        <Link href="/" className="flex items-center gap-2 sm:gap-3 group select-none shrink-0" id="vmingle-nav-brand">
           {/* Friendly Smiling Face Icon in Warm Yellow-Orange-Magenta Gradient */}
-          <div className="relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 p-0.5 shadow-md shadow-orange-500/20 group-hover:scale-105 transition-transform overflow-hidden">
-            <div className="h-full w-full rounded-[14px] bg-white flex items-center justify-center p-1.5 overflow-hidden">
+          <div className="relative flex h-9 w-9 sm:h-11 lg:h-12 sm:w-11 lg:w-12 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 p-0.5 shadow-md shadow-orange-500/20 group-hover:scale-105 transition-transform overflow-hidden">
+            <div className="h-full w-full rounded-[10px] sm:rounded-[14px] bg-white flex items-center justify-center p-1 sm:p-1.5 overflow-hidden">
               <img
                 src="/favicon.png"
                 alt="V Mingle logo"
@@ -45,25 +45,25 @@ export function VMingleHeader() {
           </div>
 
           <div className="flex flex-col">
-            <span className="text-2xl sm:text-[27px] font-black tracking-tight text-[#111827] leading-none">
+            <span className="text-xl sm:text-2xl lg:text-[27px] font-black tracking-tight text-[#111827] leading-none">
               V Mingle
             </span>
-            <span className="text-[10px] sm:text-[11px] font-semibold text-gray-500 tracking-wider mt-0.5">
+            <span className="hidden sm:block text-[10px] sm:text-[11px] font-semibold text-gray-500 tracking-wider mt-0.5">
               Random Video &amp; Text Chat
             </span>
           </div>
         </Link>
 
         {/* Right: Language Selector & CTA */}
-        <div className="flex items-center gap-3 sm:gap-4 lg:gap-5 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-3 lg:gap-5 shrink-0">
           {/* Language Selector */}
           <div className="relative" ref={langRef}>
             <button
               onClick={() => setLangMenuOpen(!langMenuOpen)}
-              className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-gray-700 hover:text-gray-900 py-2 px-2.5 sm:px-3 rounded-xl hover:bg-gray-100/70 transition-all cursor-pointer"
+              className="flex items-center gap-1 sm:gap-1.5 text-xs sm:text-sm font-semibold text-gray-700 hover:text-gray-900 py-1.5 sm:py-2 px-2 sm:px-3 rounded-xl hover:bg-gray-100/70 transition-all cursor-pointer"
               aria-label="Select Language"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-600">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-600 sm:w-[18px] sm:h-[18px]">
                 <circle cx="12" cy="12" r="10" />
                 <line x1="2" y1="12" x2="22" y2="12" />
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
@@ -95,10 +95,10 @@ export function VMingleHeader() {
             )}
           </div>
 
-          {/* Primary Action Button */}
+          {/* Primary Action Button: Start Chatting */}
           <Link
             href="/video"
-            className="flex items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 px-4 sm:px-7 py-2 sm:py-3 text-xs sm:text-[15px] font-bold text-white shadow-md shadow-rose-500/25 transition-all hover:brightness-105 active:scale-95 cursor-pointer whitespace-nowrap"
+            className="flex items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 px-3 sm:px-6 lg:px-7 py-2 sm:py-2.5 lg:py-3 text-xs sm:text-sm lg:text-[15px] font-bold text-white shadow-md shadow-rose-500/25 transition-all hover:brightness-105 active:scale-95 cursor-pointer whitespace-nowrap"
             id="header-start-btn"
           >
             Start Chatting

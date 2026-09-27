@@ -28,9 +28,15 @@ export function VMingleFooter() {
         </div>
 
         {/* Center: Navigation Links */}
-        <div className="flex flex-wrap items-center justify-center gap-5 sm:gap-7 font-medium text-gray-600">
-          <Link href="/" className="hover:text-gray-900 transition-colors">
-            Home
+        <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 font-medium text-gray-600 text-xs sm:text-sm">
+          <Link href="/video" className="text-rose-500 font-bold hover:text-rose-600 transition-colors">
+            Video Chat
+          </Link>
+          <Link href="/text" className="text-orange-500 font-bold hover:text-orange-600 transition-colors">
+            Text Chat
+          </Link>
+          <Link href="/how-it-works" className="hover:text-gray-900 transition-colors">
+            How It Works
           </Link>
           <Link href="/about" className="hover:text-gray-900 transition-colors">
             About
@@ -44,14 +50,14 @@ export function VMingleFooter() {
           <Link href="/faq" className="hover:text-gray-900 transition-colors">
             FAQ
           </Link>
-          <Link href="/contact" className="hover:text-gray-900 transition-colors">
-            Contact
-          </Link>
           <Link href="/blog" className="hover:text-gray-900 transition-colors">
             Blog
           </Link>
           <Link href="/rules" className="hover:text-gray-900 transition-colors">
             Rules
+          </Link>
+          <Link href="/contact" className="hover:text-gray-900 transition-colors">
+            Contact
           </Link>
         </div>
 

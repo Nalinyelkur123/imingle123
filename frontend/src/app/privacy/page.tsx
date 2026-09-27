@@ -1,21 +1,15 @@
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
+import { MingleeHeader } from "@/components/MingleeHeader";
+import { MingleeFooter } from "@/components/MingleeFooter";
 import Link from "next/link";
 import { Metadata } from "next";
+import { constructMetadata } from "@/config/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = constructMetadata({
   title: "Privacy Policy",
   description:
     "Learn how V Mingle protects your privacy with anonymous-first architecture, zero biometrics, and peer-to-peer encrypted random video chat.",
-  alternates: {
-    canonical: "/privacy",
-  },
-  openGraph: {
-    title: "Privacy Policy — V Mingle",
-    description: "Learn how V Mingle protects your privacy with anonymous-first architecture.",
-    url: "/privacy",
-  },
-};
+  canonical: "/privacy",
+});
 
 export default function PrivacyPage() {
   const pillars = [
@@ -85,7 +79,7 @@ export default function PrivacyPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#fdfbf7] text-[#111827] dark:bg-[#121016] dark:text-[#f4f4f7] transition-colors">
-      <Header />
+      <MingleeHeader />
 
       <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {/* Back Navigation */}
@@ -162,7 +156,7 @@ export default function PrivacyPage() {
         </div>
       </main>
 
-      <Footer />
+      <MingleeFooter />
     </div>
   );
 }

@@ -3,20 +3,20 @@ import Link from "next/link";
 import { MingleeHeader } from "@/components/MingleeHeader";
 import { MingleeFooter } from "@/components/MingleeFooter";
 
-export const metadata: Metadata = {
+import { constructMetadata } from "@/config/site";
+
+export const metadata: Metadata = constructMetadata({
   title: "Frequently Asked Questions (FAQ)",
   description:
     "Get answers to common questions about V Mingle: pricing, account requirements, WebRTC video calling privacy, smart interest matching, and safety moderation.",
-  alternates: {
-    canonical: "/faq",
-  },
-  openGraph: {
-    title: "Frequently Asked Questions (FAQ) — V Mingle",
-    description:
-      "Get answers to common questions about V Mingle random video and text chat.",
-    url: "/faq",
-  },
-};
+  canonical: "/faq",
+  keywords: [
+    "V Mingle FAQ",
+    "VMingle questions",
+    "is V Mingle free",
+    "how to use V Mingle",
+  ],
+});
 
 const FAQS = [
   {

@@ -15,6 +15,7 @@ import {
   ICECandidatePayload,
   MatchEndedPayload,
   submitReportApi,
+  fetchIceServers,
 } from "@/services/api";
 import { connectSocket } from "@/services/socket";
 import {
@@ -34,12 +35,27 @@ interface ChatRoomProps {
   autoStart?: boolean;
 }
 
-const RTC_CONFIG: RTCConfiguration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ],
-};
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
+  {
+    urls: [
+      "stun:stun.l.google.com:19302",
+      "stun:stun1.l.google.com:19302",
+      "stun:stun2.l.google.com:19302",
+      "stun:stun3.l.google.com:19302",
+      "stun:stun4.l.google.com:19302",
+      "stun:stun.cloudflare.com:3478",
+    ],
+  },
+  {
+    urls: [
+      "turn:openrelay.metered.ca:80",
+      "turn:openrelay.metered.ca:443",
+      "turns:openrelay.metered.ca:443?transport=tcp",
+    ],
+    username: "openrelay",
+    credential: "openrelay",
+  },
+];
 
 let msgCounter = 0;
 function createUniqueId(prefix = "msg"): string {
@@ -80,12 +96,10 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     ReportReason.OTHER
   );
   const [reportSubmitted, setReportSubmitted] = useState(false);
-  const [matchDuration, setMatchDuration] = useState(0);
 
   // Anonymous session continuity & reconnection states
   const [session, setSession] = useState<AnonymousSession | null>(null);
   const [peerReconnecting, setPeerReconnecting] = useState(false);
-  const [graceRemaining, setGraceRemaining] = useState<number>(0);
 
   // Local media controls & status
   const [isAudioMuted, setIsAudioMuted] = useState(false);
@@ -94,6 +108,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
   // Mobile layout switch (PiP vs Split view on small screens)
   const [mobileViewMode, setMobileViewMode] = useState<"pip" | "split">("pip");
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Interests
   const [interests, setInterests] = useInterests();
@@ -105,7 +120,42 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteMediaStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const iceCandidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
+  const pendingOfferRef = useRef<WebRTCOfferPayload | null>(null);
+  const currentMatchRef = useRef<MatchInfo | null>(null);
+  const iceServersRef = useRef<RTCIceServer[]>(DEFAULT_ICE_SERVERS);
+
+  // Keep currentMatchRef in sync
+  useEffect(() => {
+    currentMatchRef.current = currentMatch;
+  }, [currentMatch]);
+
+  // Dynamically fetch STUN/TURN servers on mount
+  useEffect(() => {
+    fetchIceServers()
+      .then((servers) => {
+        if (servers && servers.length > 0) {
+          iceServersRef.current = servers;
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Flush queued ICE candidates after remoteDescription is set
+  const flushIceCandidates = useCallback(async (pc: RTCPeerConnection) => {
+    while (iceCandidateQueueRef.current.length > 0) {
+      const candidateInit = iceCandidateQueueRef.current.shift();
+      if (candidateInit) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidateInit));
+        } catch {
+          // Handled gracefully
+        }
+      }
+    }
+  }, []);
 
   // Real-time modular long-hair detection on active local video stream
   useHairDetection({
@@ -118,11 +168,19 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
   // Clean up WebRTC peer connection
   const cleanupPeerConnection = useCallback(() => {
+    iceCandidateQueueRef.current = [];
+    pendingOfferRef.current = null;
     if (peerConnectionRef.current) {
       peerConnectionRef.current.onicecandidate = null;
       peerConnectionRef.current.ontrack = null;
+      peerConnectionRef.current.oniceconnectionstatechange = null;
+      peerConnectionRef.current.onconnectionstatechange = null;
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
+    }
+    if (remoteMediaStreamRef.current) {
+      remoteMediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      remoteMediaStreamRef.current = null;
     }
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
@@ -164,6 +222,19 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
           localVideoRef.current.srcObject = stream;
           localVideoRef.current.play().catch(() => {});
         }
+        // Dynamically replace or attach tracks to active RTCPeerConnection if one is negotiating
+        const pc = peerConnectionRef.current;
+        if (pc && pc.connectionState !== "closed") {
+          const videoTrack = stream.getVideoTracks()[0];
+          const audioTrack = stream.getAudioTracks()[0];
+          pc.getSenders().forEach((sender) => {
+            if (sender.track?.kind === "video" && videoTrack) {
+              sender.replaceTrack(videoTrack).catch(() => {});
+            } else if (sender.track?.kind === "audio" && audioTrack) {
+              sender.replaceTrack(audioTrack).catch(() => {});
+            }
+          });
+        }
       })
       .catch((err) => {
         console.warn("Camera/microphone access denied or unavailable:", err);
@@ -182,9 +253,12 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   }, [cameraStatus]);
 
   useEffect(() => {
-    requestCameraAccess();
+    const timer = setTimeout(() => {
+      requestCameraAccess();
+    }, 0);
 
     return () => {
+      clearTimeout(timer);
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
         localStreamRef.current = null;
@@ -215,6 +289,14 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     }
   };
 
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
   // Setup WebRTC peer connection when matched in video mode
   const setupPeerConnection = useCallback(
     async (isInitiator: boolean) => {
@@ -222,7 +304,13 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       cleanupPeerConnection();
 
       const socket = connectSocket();
-      const pc = new RTCPeerConnection(RTC_CONFIG);
+      const pcConfig: RTCConfiguration = {
+        iceServers: iceServersRef.current.length > 0 ? iceServersRef.current : DEFAULT_ICE_SERVERS,
+        iceCandidatePoolSize: 10,
+        bundlePolicy: "max-bundle",
+        iceTransportPolicy: "all",
+      };
+      const pc = new RTCPeerConnection(pcConfig);
       peerConnectionRef.current = pc;
 
       // Ensure localStream is available
@@ -252,21 +340,45 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             // track already added
           }
         });
+      } else {
+        // Pre-allocate transceivers to guarantee SDP includes media tracks even if getUserMedia is delayed
+        try {
+          pc.addTransceiver("video", { direction: "sendrecv" });
+          pc.addTransceiver("audio", { direction: "sendrecv" });
+        } catch {
+          // ignore
+        }
       }
 
       pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = event.streams[0];
-            remoteVideoRef.current.play().catch(() => {});
-          }
-          setRemoteStreamActive(true);
+        let remoteStream = remoteMediaStreamRef.current;
+        if (!remoteStream) {
+          remoteStream = new MediaStream();
+          remoteMediaStreamRef.current = remoteStream;
         }
+        if (event.track) {
+          if (!remoteStream.getTracks().some((t) => t.id === event.track.id)) {
+            remoteStream.addTrack(event.track);
+          }
+        }
+        if (event.streams && event.streams[0]) {
+          event.streams[0].getTracks().forEach((t) => {
+            if (!remoteStream!.getTracks().some((existing) => existing.id === t.id)) {
+              remoteStream!.addTrack(t);
+            }
+          });
+        }
+        if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
+          remoteVideoRef.current.srcObject = remoteStream;
+          remoteVideoRef.current.play().catch(() => {});
+        }
+        setRemoteStreamActive(true);
       };
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           socket.emit(SocketEvents.ICE_CANDIDATE, {
+            matchId: currentMatchRef.current?.matchId,
             candidate: event.candidate.candidate,
             sdpMLineIndex: event.candidate.sdpMLineIndex,
             sdpMid: event.candidate.sdpMid,
@@ -274,7 +386,33 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         }
       };
 
-      if (isInitiator) {
+      pc.oniceconnectionstatechange = () => {
+        const state = pc.iceConnectionState;
+        if (state === "failed") {
+          console.warn("[WebRTC] ICE connection state is failed. Attempting ICE restart...");
+          if (pc.restartIce) {
+            pc.restartIce();
+          }
+        }
+      };
+
+      // Check if an offer already arrived while peerConnection was being constructed
+      if (!isInitiator && pendingOfferRef.current) {
+        const pending = pendingOfferRef.current;
+        pendingOfferRef.current = null;
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: pending.sdp }));
+          await flushIceCandidates(pc);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          socket.emit(SocketEvents.WEBRTC_ANSWER, {
+            matchId: currentMatchRef.current?.matchId || pending.matchId,
+            sdp: answer.sdp || "",
+          } as WebRTCAnswerPayload);
+        } catch (err) {
+          console.error("[WebRTC] Error processing buffered offer in setup:", err);
+        }
+      } else if (isInitiator) {
         try {
           const offer = await pc.createOffer({
             offerToReceiveAudio: true,
@@ -282,24 +420,25 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
           });
           await pc.setLocalDescription(offer);
           socket.emit(SocketEvents.WEBRTC_OFFER, {
+            matchId: currentMatchRef.current?.matchId,
             sdp: offer.sdp || "",
           } as WebRTCOfferPayload);
-        } catch {
-          // Handled gracefully
+        } catch (err) {
+          console.error("[WebRTC] Error creating offer:", err);
         }
       }
     },
-    [mode, cleanupPeerConnection]
+    [mode, cleanupPeerConnection, flushIceCandidates]
   );
 
   // Start chat - join matchmaking queue
   const startChat = useCallback(() => {
     cleanupPeerConnection();
+    currentMatchRef.current = null;
     setCurrentMatch(null);
     setSharedInterest(null);
     setChatState(ChatState.SEARCHING);
     setStopConfirm(false);
-    setMatchDuration(0);
 
     const socket = connectSocket();
 
@@ -331,6 +470,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     socket.emit(SocketEvents.NEXT);
     setStopConfirm(false);
     setSharedInterest(null);
+    currentMatchRef.current = null;
     setCurrentMatch(null);
     startChat();
   }, [cleanupPeerConnection, startChat]);
@@ -345,9 +485,9 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     cleanupPeerConnection();
     const socket = connectSocket();
     socket.emit(SocketEvents.STOP);
+    currentMatchRef.current = null;
     setCurrentMatch(null);
     setChatState(ChatState.IDLE);
-    setMatchDuration(0);
   }, [stopConfirm, chatState, cleanupPeerConnection]);
 
   // 1. Initialize privacy-safe anonymous session on component mount & auto-start
@@ -380,22 +520,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     };
   }, [mode, autoStart, interests]);
 
-  // 2. Countdown timer for peer reconnection grace period (15s)
-  useEffect(() => {
-    if (!peerReconnecting || graceRemaining <= 0) return;
-    const timer = setInterval(() => {
-      setGraceRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [peerReconnecting, graceRemaining]);
-
-  // 3. Handle Socket.IO events (including session continuity & graceful reconnect)
+  // 2. Handle Socket.IO events (including session continuity & graceful reconnect)
   useEffect(() => {
     const socket = connectSocket();
 
@@ -409,15 +534,14 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       }));
     };
 
-    const handlePeerReconnecting = (payload?: { graceSeconds?: number }) => {
+    const handlePeerReconnecting = () => {
       setPeerReconnecting(true);
-      setGraceRemaining(payload?.graceSeconds || 15);
       setMessages((prev) => [
         ...prev,
         {
           id: createUniqueId("sys"),
           sender: "system",
-          text: "Partner connection interrupted. Waiting up to 15s for reconnection...",
+          text: "Partner connection interrupted. Reconnecting...",
           time: new Date().toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
@@ -426,7 +550,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       ]);
     };
 
-    const handlePeerReconnected = () => {
+    const handlePeerReconnected = (payload?: { isInitiator?: boolean }) => {
       setPeerReconnecting(false);
       setMessages((prev) => [
         ...prev,
@@ -440,6 +564,9 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
           }),
         },
       ]);
+      if (mode === "video") {
+        setupPeerConnection(payload?.isInitiator ?? false);
+      }
     };
 
     const handleMatchReconnected = (payload: {
@@ -455,10 +582,10 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         isInitiator: payload.isInitiator,
       };
 
+      currentMatchRef.current = matchInfo;
       setCurrentMatch(matchInfo);
       setSharedInterest(payload.sharedInterest);
       setChatState(ChatState.CONNECTED);
-      setMatchDuration(0);
 
       setMessages((prev) => [
         ...prev,
@@ -512,10 +639,10 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         isInitiator: payload.isInitiator,
       };
 
+      currentMatchRef.current = matchInfo;
       setCurrentMatch(matchInfo);
       setSharedInterest(payload.sharedInterest);
       setChatState(ChatState.CONNECTED);
-      setMatchDuration(0);
 
       const sysText = payload.sharedInterest
         ? `You both like #${payload.sharedInterest}! Say hello to your stranger.`
@@ -555,50 +682,90 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     };
 
     const handleWebRTCOffer = async (payload: WebRTCOfferPayload) => {
-      if (mode !== "video" || !peerConnectionRef.current) return;
+      if (mode !== "video") return;
+      const pc = peerConnectionRef.current;
+      if (!pc) {
+        pendingOfferRef.current = payload;
+        return;
+      }
       try {
-        const pc = peerConnectionRef.current;
+        if (pc.signalingState !== "stable") {
+          await Promise.all([
+            pc.setLocalDescription({ type: "rollback" }).catch(() => {}),
+          ]);
+        }
         await pc.setRemoteDescription(
           new RTCSessionDescription({ type: "offer", sdp: payload.sdp })
         );
+        await flushIceCandidates(pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit(SocketEvents.WEBRTC_ANSWER, {
+          matchId: currentMatchRef.current?.matchId || payload.matchId,
           sdp: answer.sdp || "",
         } as WebRTCAnswerPayload);
-      } catch {
-        // Handled gracefully
+      } catch (err) {
+        console.error("[WebRTC] Error handling offer:", err);
       }
     };
 
     const handleWebRTCAnswer = async (payload: WebRTCAnswerPayload) => {
-      if (mode !== "video" || !peerConnectionRef.current) return;
+      if (mode !== "video") return;
+      const pc = peerConnectionRef.current;
+      if (!pc) return;
       try {
-        const pc = peerConnectionRef.current;
-        await pc.setRemoteDescription(
-          new RTCSessionDescription({ type: "answer", sdp: payload.sdp })
-        );
-      } catch {
-        // Handled gracefully
+        if (pc.signalingState === "have-local-offer") {
+          await pc.setRemoteDescription(
+            new RTCSessionDescription({ type: "answer", sdp: payload.sdp })
+          );
+          await flushIceCandidates(pc);
+        }
+      } catch (err) {
+        console.error("[WebRTC] Error handling answer:", err);
       }
     };
 
     const handleICECandidate = async (payload: ICECandidatePayload) => {
-      if (mode !== "video" || !peerConnectionRef.current) return;
-      try {
-        const candidate = new RTCIceCandidate({
-          candidate: payload.candidate,
-          sdpMLineIndex: payload.sdpMLineIndex,
-          sdpMid: payload.sdpMid,
-        });
-        await peerConnectionRef.current.addIceCandidate(candidate);
-      } catch {
-        // Handled gracefully
+      if (mode !== "video") return;
+      const candidateInit: RTCIceCandidateInit = {
+        candidate: payload.candidate,
+        sdpMLineIndex: payload.sdpMLineIndex,
+        sdpMid: payload.sdpMid,
+      };
+      const pc = peerConnectionRef.current;
+      if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
+        iceCandidateQueueRef.current.push(candidateInit);
+      } else {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidateInit));
+        } catch {
+          // Handled gracefully
+        }
       }
+    };
+
+    const handleSocketError = (payload: { message?: string } | string) => {
+      const errMsg =
+        typeof payload === "string"
+          ? payload
+          : payload?.message || "An error occurred with the chat connection.";
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: createUniqueId("sys-err"),
+          sender: "system",
+          text: `⚠️ Error: ${errMsg}`,
+          time: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+      ]);
     };
 
     const handleMatchEnded = (payload?: MatchEndedPayload) => {
       cleanupPeerConnection();
+      currentMatchRef.current = null;
       setCurrentMatch(null);
       setPeerReconnecting(false);
       setChatState(ChatState.ENDED);
@@ -631,6 +798,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     socket.on(SocketEvents.WEBRTC_OFFER, handleWebRTCOffer);
     socket.on(SocketEvents.WEBRTC_ANSWER, handleWebRTCAnswer);
     socket.on(SocketEvents.ICE_CANDIDATE, handleICECandidate);
+    socket.on(SocketEvents.ERROR, handleSocketError);
     socket.on(SocketEvents.MATCH_ENDED, handleMatchEnded);
     socket.on(SocketEvents.PARTNER_DISCONNECTED, handleMatchEnded);
 
@@ -645,16 +813,29 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       socket.off(SocketEvents.WEBRTC_OFFER, handleWebRTCOffer);
       socket.off(SocketEvents.WEBRTC_ANSWER, handleWebRTCAnswer);
       socket.off(SocketEvents.ICE_CANDIDATE, handleICECandidate);
+      socket.off(SocketEvents.ERROR, handleSocketError);
       socket.off(SocketEvents.MATCH_ENDED, handleMatchEnded);
       socket.off(SocketEvents.PARTNER_DISCONNECTED, handleMatchEnded);
     };
-  }, [mode, cleanupPeerConnection, setupPeerConnection]);
+  }, [mode, cleanupPeerConnection, setupPeerConnection, flushIceCandidates]);
 
-  // Keyboard shortcut: ESC skips/stops/starts
+  // Keyboard shortcut: ESC skips/stops/starts, or dismisses open modals
   useEffect(() => {
     const handleKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
+        if (showReportModal) {
+          setShowReportModal(false);
+          return;
+        }
+        if (showInterestsModal) {
+          setShowInterestsModal(false);
+          return;
+        }
+        if (showPremiumModal) {
+          setShowPremiumModal(false);
+          return;
+        }
         if (chatState === ChatState.CONNECTED) {
           handleNext();
         } else if (chatState === ChatState.IDLE || chatState === ChatState.ENDED) {
@@ -666,16 +847,15 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [chatState, handleNext, startChat, handleStop]);
-
-  // Match duration counter
-  useEffect(() => {
-    if (chatState !== ChatState.CONNECTED) return;
-    const timer = setInterval(() => {
-      setMatchDuration((prev) => prev + 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [chatState]);
+  }, [
+    chatState,
+    handleNext,
+    startChat,
+    handleStop,
+    showReportModal,
+    showInterestsModal,
+    showPremiumModal,
+  ]);
 
   // Auto-scroll messages
   useEffect(() => {
@@ -687,6 +867,21 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     e?.preventDefault();
     const text = (customText ?? inputMessage).trim();
     if (!text || chatState !== ChatState.CONNECTED) return;
+    if (text.length > 500) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: createUniqueId("sys-err"),
+          sender: "system",
+          text: "⚠️ Message exceeds maximum length of 500 characters.",
+          time: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+      ]);
+      return;
+    }
 
     const socket = connectSocket();
     const newMsg: Message = {
@@ -740,12 +935,6 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     setInterests(interests.filter((t) => t !== tag));
   };
 
-  const formatTimer = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
-  };
-
   return (
     <div className="flex h-screen h-dvh w-full flex-col overflow-hidden bg-[#fdfbf7] dark:bg-[#121016] text-[#111827] dark:text-[#f4f4f7]">
       {/* Universal Header */}
@@ -765,7 +954,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
               <div className="flex md:hidden items-center justify-between px-1">
                 <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
                   <span className={`h-2 w-2 rounded-full ${chatState === ChatState.CONNECTED ? "bg-green-500 animate-pulse" : "bg-gray-400"}`} />
-                  {chatState === ChatState.CONNECTED ? `Connected (${formatTimer(matchDuration)})` : chatState === ChatState.SEARCHING ? "Searching..." : "Video Preview"}
+                  {chatState === ChatState.CONNECTED ? "Connected" : chatState === ChatState.SEARCHING ? "Searching..." : "Video Preview"}
                 </span>
 
                 <div className="flex items-center gap-1 bg-amber-100/70 dark:bg-white/10 rounded-lg p-0.5 text-[11px] font-medium border border-amber-200/50 dark:border-white/5">
@@ -807,9 +996,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                         </svg>
-                        <span>Stranger reconnecting... ({graceRemaining}s)</span>
+                        <span>Stranger reconnecting...</span>
                       </div>
-                      <span className="text-[10px] bg-black/25 px-2 py-0.5 rounded-full font-mono shrink-0">15s Grace</span>
                     </div>
                   )}
 
@@ -818,10 +1006,10 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     ref={remoteVideoRef}
                     autoPlay
                     playsInline
-                    className={`h-full w-full object-cover transition-opacity duration-300 ${
+                    className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 pointer-events-none ${
                       remoteStreamActive && chatState === ChatState.CONNECTED
-                        ? "opacity-100 block"
-                        : "opacity-0 hidden"
+                        ? "opacity-100 z-10"
+                        : "opacity-0 z-0"
                     }`}
                   />
 
@@ -877,7 +1065,6 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                       <div className="flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white backdrop-blur-xs">
                         <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                         <span className="font-semibold">Stranger</span>
-                        <span className="text-gray-300 font-mono text-[9px] sm:text-[10px]">({formatTimer(matchDuration)})</span>
                       </div>
                       <span className="text-[11px] text-gray-300 mt-1">Connecting video...</span>
                     </div>
@@ -893,7 +1080,6 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                         </svg>
                       </div>
                       <span className="text-xs sm:text-sm font-bold text-gray-200">Stranger Disconnected</span>
-                      <span className="text-[10px] sm:text-[11px] text-gray-400 mt-0.5">Chat lasted {formatTimer(matchDuration)}</span>
                       <button
                         onClick={handleNext}
                         type="button"
@@ -910,9 +1096,6 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 flex items-center gap-1.5 rounded-full bg-black/60 backdrop-blur-md px-2.5 py-1 text-[10px] sm:text-xs text-white border border-white/10 shadow-xs z-20 pointer-events-auto">
                       <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-green-500 animate-pulse" />
                       <span className="font-semibold">Stranger</span>
-                      <span className="text-gray-300 font-mono text-[9px] sm:text-[10px]">
-                        {formatTimer(matchDuration)}
-                      </span>
                       {sharedInterest && (
                         <span className="ml-1 text-amber-300 font-bold">#{sharedInterest}</span>
                       )}
@@ -929,8 +1112,30 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                       />
                     </div>
                     <span className="text-xs sm:text-sm font-black text-white tracking-tight drop-shadow-xs">
-                      vmingle<span className="font-normal opacity-85">.com</span>
+                      vmingle<span className="font-normal opacity-85">.in</span>
                     </span>
+                  </div>
+
+                  {/* TOP-RIGHT CONTROLS: Fullscreen */}
+                  <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 flex items-center gap-1.5 z-20">
+                    <button
+                      onClick={toggleFullscreen}
+                      type="button"
+                      className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 backdrop-blur-md text-gray-300 hover:text-white hover:bg-black/80 transition-colors cursor-pointer border border-white/10"
+                      title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                      aria-label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                      id="fullscreen-toggle-btn"
+                    >
+                      {isFullscreen ? (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+                        </svg>
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                        </svg>
+                      )}
+                    </button>
                   </div>
 
                   {/* BOTTOM-RIGHT FLAG (Report user): Exact match to reference screenshot */}
@@ -988,8 +1193,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     </div>
                   )}
 
-                  {/* Subtle Floating Local Media Controls Toolbar (Revealed on hover: Voice & Flip) */}
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 border border-white/10 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-30">
+                  {/* Subtle Floating Local Media Controls Toolbar (Always visible on mobile/touch, revealed on hover on desktop: Voice & Flip) */}
+                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 border border-white/10 shadow-lg opacity-90 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 z-30">
                     {/* Voice Button (Toggle Microphone) */}
                     <button
                       onClick={toggleAudio}
@@ -1171,7 +1376,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                       <div className="text-2xl">👋</div>
                       <h4 className="text-sm font-bold text-gray-900 dark:text-white">Stranger has disconnected</h4>
                       <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
-                        Your chat ended {matchDuration > 0 ? `after ${formatTimer(matchDuration)}` : ""}. Click below to meet someone new!
+                        Your chat has ended. Click below to meet someone new!
                       </p>
                       <button
                         onClick={handleNext}
@@ -1244,21 +1449,21 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                 <button
                   onClick={startChat}
                   type="button"
-                  className="flex h-[52px] sm:h-[56px] w-[80px] sm:w-[95px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
+                  className="flex h-[48px] sm:h-[56px] w-[70px] sm:w-[95px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
                   id="chat-start-btn"
                 >
-                  <span className="text-base font-extrabold tracking-wide leading-tight">Start</span>
-                  <span className="text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
+                  <span className="text-sm sm:text-base font-extrabold tracking-wide leading-tight">Start</span>
+                  <span className="hidden sm:inline text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
                 </button>
               ) : chatState === ChatState.ENDED ? (
                 <button
                   onClick={handleNext}
                   type="button"
-                  className="flex h-[52px] sm:h-[56px] w-[80px] sm:w-[95px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
+                  className="flex h-[48px] sm:h-[56px] w-[70px] sm:w-[95px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
                   id="chat-new-btn"
                 >
-                  <span className="text-base font-extrabold tracking-wide leading-tight">New</span>
-                  <span className="text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
+                  <span className="text-sm sm:text-base font-extrabold tracking-wide leading-tight">New</span>
+                  <span className="hidden sm:inline text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
                 </button>
               ) : (
                 <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
@@ -1266,7 +1471,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                   <button
                     onClick={handleStop}
                     type="button"
-                    className={`flex h-[52px] sm:h-[56px] w-[65px] min-[380px]:w-[72px] sm:w-[84px] shrink-0 flex-col items-center justify-center rounded-2xl text-white shadow-sm active:scale-95 transition-all cursor-pointer ${
+                    className={`flex h-[48px] sm:h-[56px] w-[56px] min-[380px]:w-[68px] sm:w-[84px] shrink-0 flex-col items-center justify-center rounded-2xl text-white shadow-sm active:scale-95 transition-all cursor-pointer ${
                       stopConfirm
                         ? "bg-red-600 hover:bg-red-700 animate-pulse"
                         : "bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600"
@@ -1276,7 +1481,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     <span className="text-xs sm:text-sm font-bold leading-tight">
                       {stopConfirm ? "Really?" : "Stop"}
                     </span>
-                    <span className="text-[10px] opacity-80 leading-none mt-0.5 font-mono">Esc</span>
+                    <span className="hidden sm:inline text-[10px] opacity-80 leading-none mt-0.5 font-mono">Esc</span>
                   </button>
 
                   {/* Next Button (Only when connected) */}
@@ -1284,11 +1489,11 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     <button
                       onClick={handleNext}
                       type="button"
-                      className="flex h-[52px] sm:h-[56px] w-[65px] min-[380px]:w-[72px] sm:w-[84px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
+                      className="flex h-[48px] sm:h-[56px] w-[56px] min-[380px]:w-[68px] sm:w-[84px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
                       id="chat-next-btn"
                     >
                       <span className="text-xs sm:text-sm font-extrabold leading-tight">Next</span>
-                      <span className="text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
+                      <span className="hidden sm:inline text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
                     </button>
                   )}
                 </div>
@@ -1300,6 +1505,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                   type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
+                  maxLength={500}
+                  aria-label="Message stranger"
                   placeholder={
                     chatState === ChatState.CONNECTED
                       ? "Type a message to stranger..."
@@ -1331,8 +1538,17 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       {/* REPORT USER MODAL                                                   */}
       {/* =================================================================== */}
       {showReportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]">
+        <div
+          onClick={() => setShowReportModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Report Stranger"
+            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]"
+          >
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/10 text-red-500">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1404,8 +1620,17 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       {/* INTERESTS MODAL (Inline Interest Editor)                           */}
       {/* =================================================================== */}
       {showInterestsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]">
+        <div
+          onClick={() => setShowInterestsModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Chat Interests"
+            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]"
+          >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-xl">🏷️</span>
@@ -1482,8 +1707,17 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       {/* PREMIUM MODAL                                                       */}
       {/* =================================================================== */}
       {showPremiumModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]">
+        <div
+          onClick={() => setShowPremiumModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="V Mingle Premium"
+            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]"
+          >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 text-white shadow-md shadow-rose-500/25">

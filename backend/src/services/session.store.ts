@@ -37,6 +37,17 @@ export interface SessionMatchRecord {
   endReason: string | null;
 }
 
+export interface ReportRecord {
+  reportId: string;
+  reporterSessionId?: string | null;
+  reportedUserId?: string | null;
+  matchId?: string | null;
+  reason: string;
+  description: string;
+  createdAt: number;
+  status: 'pending' | 'reviewed' | 'actioned' | 'dismissed';
+}
+
 export interface ISessionStore {
   init(): Promise<void>;
   getSession(sessionId: string): Promise<SessionRecord | null>;
@@ -46,6 +57,8 @@ export interface ISessionStore {
   deleteSession(sessionId: string): Promise<void>;
   recordMatch(match: SessionMatchRecord): Promise<void>;
   endMatchRecord(matchId: string, endReason: string): Promise<void>;
+  saveReport(report: ReportRecord): Promise<void>;
+  getReports?(): Promise<ReportRecord[]>;
   pruneExpiredSessions(): Promise<number>;
   destroy?(): void;
 }
@@ -54,6 +67,7 @@ export interface ISessionStore {
 class MemorySessionStore implements ISessionStore {
   private sessions: Map<string, SessionRecord> = new Map();
   private matches: Map<string, SessionMatchRecord> = new Map();
+  private reports: Map<string, ReportRecord> = new Map();
   private pruneInterval: NodeJS.Timeout | null = null;
 
   public async init(): Promise<void> {
@@ -61,6 +75,10 @@ class MemorySessionStore implements ISessionStore {
     this.pruneInterval = setInterval(() => {
       this.pruneExpiredSessions().catch(() => {});
     }, 60000);
+    // Unref timer so it does not prevent Node processes/tests from exiting cleanly
+    if (this.pruneInterval && typeof this.pruneInterval.unref === 'function') {
+      this.pruneInterval.unref();
+    }
     logger.info('MemorySessionStore initialized with automatic TTL cleanup');
   }
 
@@ -69,6 +87,15 @@ class MemorySessionStore implements ISessionStore {
       clearInterval(this.pruneInterval);
       this.pruneInterval = null;
     }
+  }
+
+  public async saveReport(report: ReportRecord): Promise<void> {
+    this.reports.set(report.reportId, { ...report });
+    logger.info(`Persisted safety report ${report.reportId} to in-memory store`);
+  }
+
+  public async getReports(): Promise<ReportRecord[]> {
+    return Array.from(this.reports.values());
   }
 
   public async getSession(sessionId: string): Promise<SessionRecord | null> {
@@ -181,6 +208,19 @@ class PostgresSessionStore implements ISessionStore {
           ended_at BIGINT,
           end_reason VARCHAR(32)
         );
+
+        CREATE TABLE IF NOT EXISTS user_reports (
+          report_id VARCHAR(64) PRIMARY KEY,
+          reporter_session_id VARCHAR(64),
+          reported_user_id VARCHAR(64),
+          match_id VARCHAR(64),
+          reason VARCHAR(64) NOT NULL,
+          description TEXT,
+          created_at BIGINT NOT NULL,
+          status VARCHAR(32) NOT NULL DEFAULT 'pending'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_reports_created_at ON user_reports(created_at);
       `);
       logger.info('PostgresSessionStore initialized with schema tables');
     } finally {
@@ -308,6 +348,43 @@ class PostgresSessionStore implements ISessionStore {
     return res.rowCount || 0;
   }
 
+  public async saveReport(report: ReportRecord): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO user_reports
+       (report_id, reporter_session_id, reported_user_id, match_id, reason, description, created_at, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (report_id) DO NOTHING`,
+      [
+        report.reportId,
+        report.reporterSessionId || null,
+        report.reportedUserId || null,
+        report.matchId || null,
+        report.reason,
+        report.description || '',
+        report.createdAt,
+        report.status || 'pending',
+      ]
+    );
+    logger.info(`Persisted safety report ${report.reportId} to PostgreSQL database`);
+  }
+
+  public async getReports(): Promise<ReportRecord[]> {
+    const res = await this.pool.query(
+      `SELECT report_id, reporter_session_id, reported_user_id, match_id, reason, description, created_at, status
+       FROM user_reports ORDER BY created_at DESC LIMIT 100`
+    );
+    return res.rows.map((r) => ({
+      reportId: r.report_id,
+      reporterSessionId: r.reporter_session_id,
+      reportedUserId: r.reported_user_id,
+      matchId: r.match_id,
+      reason: r.reason,
+      description: r.description,
+      createdAt: Number(r.created_at),
+      status: r.status,
+    }));
+  }
+
   public destroy(): void {
     this.pool.end().catch(() => {});
   }
@@ -432,6 +509,32 @@ class ResilientSessionStore implements ISessionStore {
 
   public async pruneExpiredSessions(): Promise<number> {
     return this.activeStore.pruneExpiredSessions();
+  }
+
+  public async saveReport(report: ReportRecord): Promise<void> {
+    try {
+      await this.activeStore.saveReport(report);
+    } catch {
+      if (this.activeStore !== this.memoryFallback) {
+        this.activeStore = this.memoryFallback;
+        await this.activeStore.saveReport(report);
+      }
+    }
+  }
+
+  public async getReports(): Promise<ReportRecord[]> {
+    try {
+      if (this.activeStore.getReports) {
+        return await this.activeStore.getReports();
+      }
+      return await this.memoryFallback.getReports();
+    } catch {
+      if (this.activeStore !== this.memoryFallback) {
+        this.activeStore = this.memoryFallback;
+        return this.memoryFallback.getReports();
+      }
+      return [];
+    }
   }
 
   public destroy(): void {

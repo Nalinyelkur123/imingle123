@@ -3,32 +3,20 @@ import Link from "next/link";
 import { MingleeHeader } from "@/components/MingleeHeader";
 import { MingleeFooter } from "@/components/MingleeFooter";
 
-export const metadata: Metadata = {
+import { constructMetadata, getBreadcrumbSchema } from "@/config/site";
+
+export const metadata: Metadata = constructMetadata({
   title: "About Us — Connecting the World Through Spontaneous Conversations",
   description:
     "Learn about V Mingle, our mission to build a safe, spontaneous, and anonymous random video and text chat platform that brings people closer worldwide.",
-  alternates: {
-    canonical: "/about",
-  },
-  openGraph: {
-    title: "About V Mingle — Connecting the World Through Spontaneous Conversations",
-    description:
-      "Learn about V Mingle, our mission to build a safe, spontaneous, and anonymous random video and text chat platform.",
-    url: "/about",
-  },
-};
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://vmingle.in";
+  canonical: "/about",
+});
 
 export default function AboutPage() {
-  const breadcrumbSchema = {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "About V Mingle", item: `${SITE_URL}/about` },
-    ],
-  };
+  const breadcrumbSchema = getBreadcrumbSchema([
+    { name: "Home", url: "/" },
+    { name: "About V Mingle", url: "/about" },
+  ]);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-[#111827]">

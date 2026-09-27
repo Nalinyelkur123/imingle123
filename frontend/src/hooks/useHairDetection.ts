@@ -28,7 +28,7 @@ export function useHairDetection({
   fps = 5,
 }: UseHairDetectionOptions) {
   const [latestDetection, setLatestDetection] = useState<DetectionResult | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const isProcessing = Boolean(enabled && sessionId);
   const detectorRef = useRef<IHairDetector | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const inFlightRef = useRef(false);
@@ -51,12 +51,10 @@ export function useHairDetection({
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
-      setIsProcessing(false);
       return;
     }
 
     const intervalMs = Math.max(100, Math.floor(1000 / fps));
-    setIsProcessing(true);
 
     intervalRef.current = setInterval(async () => {
       const video = videoRef.current;
@@ -95,7 +93,6 @@ export function useHairDetection({
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
-      setIsProcessing(false);
     };
   }, [enabled, sessionId, userId, fps, videoRef]);
 

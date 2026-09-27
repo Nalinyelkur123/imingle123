@@ -14,9 +14,9 @@ export default function robots(): MetadataRoute.Robots {
           "/api/",        // REST API endpoints
           "/queue/",      // WebSocket queue internals
           "/session/",    // Session management
-          "/admin/",      // Admin panel
-          "/chat/",       // Internal /chat route (app screen)
-          "/_next/",      // Next.js internals
+          "/admin/",      // Admin routes
+          "/chat",        // Internal application router
+          "/_next/",      // Next.js static asset bundles
         ],
       },
     ],

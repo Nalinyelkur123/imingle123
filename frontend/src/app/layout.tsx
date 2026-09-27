@@ -1,36 +1,27 @@
 import type { Metadata } from "next";
 import "./globals.css";
-
-const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://vmingle.in";
+import { Inter, JetBrains_Mono, Caveat } from "next/font/google";
+import {
+  SITE_CONFIG,
+  getOrganizationSchema,
+  getWebSiteSchema,
+  getSoftwareApplicationSchema,
+} from "@/config/site";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(baseUrl),
+  metadataBase: new URL(SITE_CONFIG.baseUrl),
   title: {
-    default: "V Mingle – Random Video & Text Chat to Meet New People",
-    template: "%s | V Mingle",
+    default: `${SITE_CONFIG.name} – ${SITE_CONFIG.tagline}`,
+    template: `%s | ${SITE_CONFIG.name}`,
   },
-  description:
-    "V Mingle lets you meet and chat with new people through random video and text conversations. Connect with people around the world in a simple, friendly chat experience.",
-  keywords: [
-    "V Mingle",
-    "VMingle",
-    "V Mingle chat",
-    "V Mingle video chat",
-    "V Mingle random chat",
-    "V Mingle online chat",
-    "V Mingle meet strangers",
-    "V Mingle video calling",
-    "random video chat",
-    "chat with strangers",
-    "free video chat",
-    "anonymous chat",
-  ],
-  authors: [{ name: "V Mingle Team", url: baseUrl }],
-  creator: "V Mingle",
-  publisher: "V Mingle",
-  applicationName: "V Mingle",
+  description: SITE_CONFIG.description,
+  keywords: SITE_CONFIG.keywords,
+  authors: [{ name: `${SITE_CONFIG.name} Team`, url: SITE_CONFIG.baseUrl }],
+  creator: SITE_CONFIG.name,
+  publisher: SITE_CONFIG.name,
+  applicationName: SITE_CONFIG.name,
   alternates: {
-    canonical: "/",
+    canonical: SITE_CONFIG.baseUrl,
   },
   robots: {
     index: true,
@@ -46,39 +37,35 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: baseUrl,
-    siteName: "V Mingle",
-    title: "V Mingle – Random Video & Text Chat to Meet New People",
-    description:
-      "V Mingle lets you meet and chat with new people through random video and text conversations. Connect with people around the world in a simple, friendly chat experience.",
+    url: SITE_CONFIG.baseUrl,
+    siteName: SITE_CONFIG.name,
+    title: `${SITE_CONFIG.name} – ${SITE_CONFIG.tagline}`,
+    description: SITE_CONFIG.description,
     images: [
       {
-        url: "/og-image.png",
+        url: SITE_CONFIG.ogImage,
         width: 1200,
         height: 630,
-        alt: "V Mingle – Random Video & Text Chat Platform",
+        alt: `${SITE_CONFIG.name} – ${SITE_CONFIG.tagline}`,
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "V Mingle – Random Video & Text Chat to Meet New People",
-    description:
-      "Connect with strangers worldwide through random video and text chat on V Mingle. Free, instant, and anonymous.",
-    images: ["/og-image.png"],
-    creator: "@vmingle",
+    title: `${SITE_CONFIG.name} – ${SITE_CONFIG.tagline}`,
+    description: SITE_CONFIG.description,
+    images: [SITE_CONFIG.ogImage],
+    creator: SITE_CONFIG.socials.twitterHandle,
   },
   icons: {
     icon: [
-      { url: "/favicon.png", type: "image/png" },
+      { url: SITE_CONFIG.favicon, type: "image/png" },
       { url: "/icon.png", type: "image/png" },
     ],
-    shortcut: "/favicon.png",
-    apple: "/apple-icon.png",
+    shortcut: SITE_CONFIG.favicon,
+    apple: SITE_CONFIG.appleIcon,
   },
 };
-
-import { Inter, JetBrains_Mono, Caveat } from "next/font/google";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -103,6 +90,12 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const globalSchemas = [
+    getOrganizationSchema(),
+    getWebSiteSchema(),
+    getSoftwareApplicationSchema(),
+  ];
+
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} ${caveat.variable}`} suppressHydrationWarning>
       <head>
@@ -112,50 +105,7 @@ export default function RootLayout({
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify([
-              {
-                "@context": "https://schema.org",
-                "@type": "Organization",
-                name: "V Mingle",
-                alternateName: ["VMingle", "V Mingle Chat", "VMingle Chat"],
-                url: baseUrl,
-                logo: `${baseUrl}/favicon.png`,
-                description:
-                  "V Mingle is an instant random video and text chat platform connecting people worldwide safely, privately, and anonymously.",
-                sameAs: [
-                  "https://twitter.com/vmingle",
-                  "https://instagram.com/vminglechat",
-                  "https://youtube.com/@vmingle",
-                ],
-              },
-              {
-                "@context": "https://schema.org",
-                "@type": "WebSite",
-                name: "V Mingle",
-                alternateName: "VMingle",
-                url: baseUrl,
-                description:
-                  "Meet and chat with new people through random video and text conversations on V Mingle.",
-                potentialAction: {
-                  "@type": "SearchAction",
-                  target: `${baseUrl}/?interest={search_term_string}`,
-                  "query-input": "required name=search_term_string",
-                },
-              },
-              {
-                "@context": "https://schema.org",
-                "@type": "WebApplication",
-                name: "V Mingle",
-                applicationCategory: "CommunicationApplication",
-                operatingSystem: "All",
-                browserRequirements: "Requires WebRTC and JavaScript support",
-                offers: {
-                  "@type": "Offer",
-                  price: "0",
-                  priceCurrency: "USD",
-                },
-              },
-            ]),
+            __html: JSON.stringify(globalSchemas),
           }}
         />
       </head>

@@ -1,21 +1,21 @@
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
+import { MingleeHeader } from "@/components/MingleeHeader";
+import { MingleeFooter } from "@/components/MingleeFooter";
 import Link from "next/link";
 import { Metadata } from "next";
+import { constructMetadata, getBreadcrumbSchema } from "@/config/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = constructMetadata({
   title: "Community Rules & Safety Guidelines",
   description:
     "Read the V Mingle community rules and safety guidelines for random 1-on-1 video and text chat. Strict 18+ policy, zero tolerance for harassment.",
-  alternates: {
-    canonical: "/rules",
-  },
-  openGraph: {
-    title: "Community Rules & Safety Guidelines — V Mingle",
-    description: "Read the V Mingle community rules and safety guidelines.",
-    url: "/rules",
-  },
-};
+  canonical: "/rules",
+  keywords: [
+    "V Mingle rules",
+    "VMingle community guidelines",
+    "video chat safety",
+    "stranger chat rules",
+  ],
+});
 
 export default function RulesPage() {
   const rules = [
@@ -59,7 +59,7 @@ export default function RulesPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#fdfbf7] text-[#111827] dark:bg-[#121016] dark:text-[#f4f4f7] transition-colors">
-      <Header />
+      <MingleeHeader />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {/* Back Link */}
@@ -146,7 +146,7 @@ export default function RulesPage() {
         </div>
       </main>
 
-      <Footer />
+      <MingleeFooter />
     </div>
   );
 }

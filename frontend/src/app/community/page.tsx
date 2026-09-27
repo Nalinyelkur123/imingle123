@@ -3,24 +3,32 @@ import Link from "next/link";
 import { MingleeHeader } from "@/components/MingleeHeader";
 import { MingleeFooter } from "@/components/MingleeFooter";
 
-export const metadata: Metadata = {
+import { constructMetadata, getBreadcrumbSchema } from "@/config/site";
+
+export const metadata: Metadata = constructMetadata({
   title: "Community Guidelines — Respectful Culture & Standards",
   description:
     "Read the V Mingle community standards. Discover how we nurture respectful, diverse, and authentic spontaneous conversations between strangers worldwide.",
-  alternates: {
-    canonical: "/community",
-  },
-  openGraph: {
-    title: "Community Guidelines — V Mingle Culture & Standards",
-    description:
-      "Read the V Mingle community standards for respectful and positive random video chat.",
-    url: "/community",
-  },
-};
+  canonical: "/community",
+  keywords: [
+    "V Mingle community",
+    "VMingle community guidelines",
+    "respectful chat standards",
+  ],
+});
 
 export default function CommunityPage() {
+  const breadcrumbSchema = getBreadcrumbSchema([
+    { name: "Home", url: "/" },
+    { name: "Community Guidelines", url: "/community" },
+  ]);
+
   return (
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-[#111827]">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+      />
       <MingleeHeader />
 
       <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">

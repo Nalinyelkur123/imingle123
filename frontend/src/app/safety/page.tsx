@@ -3,32 +3,26 @@ import Link from "next/link";
 import { MingleeHeader } from "@/components/MingleeHeader";
 import { MingleeFooter } from "@/components/MingleeFooter";
 
-export const metadata: Metadata = {
+import { constructMetadata, getBreadcrumbSchema } from "@/config/site";
+
+export const metadata: Metadata = constructMetadata({
   title: "Safety & Moderation — Keeping Online Video Chat Safe",
   description:
     "Learn about V Mingle's safety guidelines, strict 18+ policy, zero tolerance for harassment, peer-to-peer encryption, and one-click user reporting tools.",
-  alternates: {
-    canonical: "/safety",
-  },
-  openGraph: {
-    title: "Safety & Moderation at V Mingle — Keeping Online Video Chat Safe",
-    description:
-      "Learn about V Mingle's safety guidelines, strict 18+ policy, zero tolerance for harassment, and reporting tools.",
-    url: "/safety",
-  },
-};
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://vmingle.in";
+  canonical: "/safety",
+  keywords: [
+    "V Mingle safety",
+    "online chat safety",
+    "video chat moderation",
+    "stranger chat safety tips",
+  ],
+});
 
 export default function SafetyPage() {
-  const breadcrumbSchema = {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "Safety & Moderation", item: `${SITE_URL}/safety` },
-    ],
-  };
+  const breadcrumbSchema = getBreadcrumbSchema([
+    { name: "Home", url: "/" },
+    { name: "Safety & Moderation", url: "/safety" },
+  ]);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-[#111827]">

@@ -1,21 +1,21 @@
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
+import { MingleeHeader } from "@/components/MingleeHeader";
+import { MingleeFooter } from "@/components/MingleeFooter";
 import Link from "next/link";
 import { Metadata } from "next";
+import { constructMetadata } from "@/config/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = constructMetadata({
   title: "Blog & Engineering Insights",
   description:
     "Read the latest engineering articles, security insights, and product updates from the V Mingle (VMingle) engineering team.",
-  alternates: {
-    canonical: "/blog",
-  },
-  openGraph: {
-    title: "Blog & Engineering Insights — V Mingle",
-    description: "Read the latest engineering articles and product updates from V Mingle.",
-    url: "/blog",
-  },
-};
+  canonical: "/blog",
+  keywords: [
+    "V Mingle blog",
+    "VMingle engineering",
+    "WebRTC architecture",
+    "video chat privacy",
+  ],
+});
 
 export default function BlogPage() {
   const articles = [
@@ -76,7 +76,7 @@ export default function BlogPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#fdfbf7] text-[#111827] dark:bg-[#121016] dark:text-[#f4f4f7] transition-colors">
-      <Header />
+      <MingleeHeader />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {/* Back Link */}
@@ -203,7 +203,7 @@ export default function BlogPage() {
         </div>
       </main>
 
-      <Footer />
+      <MingleeFooter />
     </div>
   );
 }

@@ -57,3 +57,53 @@ export async function submitReportApi(
     return false;
   }
 }
+
+export async function fetchIceServers(): Promise<RTCIceServer[]> {
+  const fallbackServers: RTCIceServer[] = [
+    {
+      urls: [
+        "stun:stun.l.google.com:19302",
+        "stun:stun1.l.google.com:19302",
+        "stun:stun2.l.google.com:19302",
+        "stun:stun3.l.google.com:19302",
+        "stun:stun4.l.google.com:19302",
+        "stun:stun.cloudflare.com:3478",
+      ],
+    },
+    {
+      urls: [
+        "turn:openrelay.metered.ca:80",
+        "turn:openrelay.metered.ca:443",
+        "turns:openrelay.metered.ca:443?transport=tcp",
+      ],
+      username: "openrelay",
+      credential: "openrelay",
+    },
+  ];
+
+  if (process.env.NEXT_PUBLIC_TURN_URL) {
+    fallbackServers.push({
+      urls: process.env.NEXT_PUBLIC_TURN_URL.split(",").map((s) => s.trim()),
+      username: process.env.NEXT_PUBLIC_TURN_USERNAME,
+      credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL,
+    });
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/config/ice-servers`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.iceServers) && data.iceServers.length > 0) {
+        return data.iceServers;
+      }
+    }
+  } catch {
+    // Graceful fallback to default STUN + OpenRelay TURN servers
+  }
+
+  return fallbackServers;
+}

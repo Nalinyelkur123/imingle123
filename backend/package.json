@@ -8,9 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit",
-    "test": "tsx --test src/services/__tests__/*.test.ts",
-    "mock-receiver": "tsx src/utils/mock-destination-server.ts"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -2,25 +2,27 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { MingleeHeader } from "@/components/MingleeHeader";
 import { MingleeFooter } from "@/components/MingleeFooter";
+import { constructMetadata, getBreadcrumbSchema } from "@/config/site";
 
-export const metadata: Metadata = {
-  title: "Contact & Support Desk",
+export const metadata: Metadata = constructMetadata({
+  title: "Contact Us & Support Desk",
   description:
-    "Contact V Mingle for technical support, safety issues, DMCA requests, law enforcement inquiries, or general feedback.",
-  alternates: {
-    canonical: "/contact",
-  },
-  openGraph: {
-    title: "Contact & Support — V Mingle Help Desk",
-    description:
-      "Get in touch with the V Mingle team for support, reporting, or inquiries.",
-    url: "/contact",
-  },
-};
+    "Contact V Mingle for technical support, safety issues, DMCA requests, law enforcement inquiries, or general feedback. We are here to help.",
+  canonical: "/contact",
+});
 
 export default function ContactPage() {
+  const breadcrumbSchema = getBreadcrumbSchema([
+    { name: "Home", url: "/" },
+    { name: "Contact Us", url: "/contact" },
+  ]);
+
   return (
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-[#111827]">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+      />
       <MingleeHeader />
 
       <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">

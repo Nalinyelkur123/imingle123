@@ -11,6 +11,7 @@ import { corsOptions } from '../config/cors.js';
 import { logger } from '../utils/logger.js';
 import { matchmaker, ChatMode } from './matchmaker.service.js';
 import { sessionService } from './session.service.js';
+import { sessionStore } from './session.store.js';
 import { hairDetectionService } from './hair-detection.service.js';
 import {
   ClientEvents,
@@ -49,7 +50,7 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
         : null);
 
     if (!token && socket.handshake.headers?.cookie) {
-      const match = socket.handshake.headers.cookie.match(/umingle_session=([^;]+)/);
+      const match = socket.handshake.headers.cookie.match(/(?:umingle_sess|umingle_session)=([^;]+)/);
       if (match) {
         token = decodeURIComponent(match[1]);
       }
@@ -115,6 +116,7 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
       io.to(reconnectResult.partnerSocketId).emit('peer_reconnected', {
         matchId: reconnectResult.match.matchId,
         partnerId: socket.id,
+        isInitiator: !reconnectResult.isInitiator,
       });
     }
 
@@ -205,6 +207,11 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── WEBRTC SIGNALING: OFFER ─────────────────────────────────────────────
     socket.on(ClientEvents.WEBRTC_OFFER, (payload: WebRTCOfferPayload) => {
+      const match = matchmaker.getMatchBySocket(socket.id);
+      if (!match || match.status !== 'active') return;
+      if (payload?.matchId && match.matchId !== payload.matchId) return;
+      if (!payload?.sdp || typeof payload.sdp !== 'string') return;
+
       const partnerSocketId = matchmaker.getPartnerSocketId(socket.id);
       if (partnerSocketId) {
         io.to(partnerSocketId).emit(ServerEvents.WEBRTC_OFFER, payload);
@@ -213,6 +220,11 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── WEBRTC SIGNALING: ANSWER ────────────────────────────────────────────
     socket.on(ClientEvents.WEBRTC_ANSWER, (payload: WebRTCAnswerPayload) => {
+      const match = matchmaker.getMatchBySocket(socket.id);
+      if (!match || match.status !== 'active') return;
+      if (payload?.matchId && match.matchId !== payload.matchId) return;
+      if (!payload?.sdp || typeof payload.sdp !== 'string') return;
+
       const partnerSocketId = matchmaker.getPartnerSocketId(socket.id);
       if (partnerSocketId) {
         io.to(partnerSocketId).emit(ServerEvents.WEBRTC_ANSWER, payload);
@@ -221,6 +233,11 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── WEBRTC SIGNALING: ICE CANDIDATE ─────────────────────────────────────
     socket.on(ClientEvents.ICE_CANDIDATE, (payload: ICECandidatePayload) => {
+      const match = matchmaker.getMatchBySocket(socket.id);
+      if (!match || match.status !== 'active') return;
+      if (payload?.matchId && match.matchId !== payload.matchId) return;
+      if (!payload?.candidate || typeof payload.candidate !== 'string') return;
+
       const partnerSocketId = matchmaker.getPartnerSocketId(socket.id);
       if (partnerSocketId) {
         io.to(partnerSocketId).emit(ServerEvents.ICE_CANDIDATE, payload);
@@ -261,14 +278,34 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
     });
 
     // ── REPORT USER ─────────────────────────────────────────────────────────
-    socket.on(ClientEvents.REPORT_USER, (payload: ReportPayload) => {
+    socket.on(ClientEvents.REPORT_USER, async (payload: ReportPayload) => {
       const partnerSocketId = matchmaker.getPartnerSocketId(socket.id);
       const match = matchmaker.getMatchBySocket(socket.id);
+      const reportId = `rep_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
       logger.warn(`Session ${sessionId} reported partner socket ${partnerSocketId}`, {
+        reportId,
         reason: payload?.reason,
         description: payload?.description,
       });
+
+      try {
+        await sessionStore.saveReport({
+          reportId,
+          reporterSessionId: sessionId,
+          reportedUserId: partnerSocketId || null,
+          matchId: match?.matchId || null,
+          reason: payload?.reason || 'other',
+          description: payload?.description ? String(payload.description).slice(0, 500) : '',
+          createdAt: Date.now(),
+          status: 'pending',
+        });
+      } catch (err) {
+        logger.error('Failed to persist user report from socket:', {
+          error: err instanceof Error ? err.message : String(err),
+          reportId,
+        });
+      }
 
       if (match) {
         matchmaker.endMatch(match.matchId, 'reported');

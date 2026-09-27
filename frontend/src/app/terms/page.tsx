@@ -1,21 +1,15 @@
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
+import { MingleeHeader } from "@/components/MingleeHeader";
+import { MingleeFooter } from "@/components/MingleeFooter";
 import Link from "next/link";
 import { Metadata } from "next";
+import { constructMetadata } from "@/config/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = constructMetadata({
   title: "Terms of Service",
   description:
     "Review the V Mingle terms of service, user agreements, and legal disclaimers for using our anonymous random video and text chat platform.",
-  alternates: {
-    canonical: "/terms",
-  },
-  openGraph: {
-    title: "Terms of Service — V Mingle",
-    description: "Review the V Mingle terms of service and user agreements.",
-    url: "/terms",
-  },
-};
+  canonical: "/terms",
+});
 
 export default function TermsPage() {
   const sections = [
@@ -73,7 +67,7 @@ export default function TermsPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#fdfbf7] text-[#111827] dark:bg-[#121016] dark:text-[#f4f4f7] transition-colors">
-      <Header />
+      <MingleeHeader />
 
       <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {/* Back Navigation */}
@@ -131,7 +125,7 @@ export default function TermsPage() {
         </div>
       </main>
 
-      <Footer />
+      <MingleeFooter />
     </div>
   );
 }

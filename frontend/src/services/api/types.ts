@@ -90,9 +90,16 @@ export interface ReportPayload {
   description?: string;
 }
 
-export interface WebRTCOfferPayload { sdp: string; }
-export interface WebRTCAnswerPayload { sdp: string; }
+export interface WebRTCOfferPayload {
+  matchId?: string;
+  sdp: string;
+}
+export interface WebRTCAnswerPayload {
+  matchId?: string;
+  sdp: string;
+}
 export interface ICECandidatePayload {
+  matchId?: string;
   candidate: string;
   sdpMLineIndex: number | null;
   sdpMid: string | null;

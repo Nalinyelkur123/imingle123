@@ -7,14 +7,32 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
 
   return [
-    // ── Primary Landing Page ─────────────────────────────────────────────────
+    // ── Primary Landing & Chat Interfaces ─────────────────────────────────────
     {
       url: `${baseUrl}/`,
       lastModified: now,
       changeFrequency: "daily",
       priority: 1.0,
     },
-    // ── High-Value Content Pages ─────────────────────────────────────────────
+    {
+      url: `${baseUrl}/video`,
+      lastModified: now,
+      changeFrequency: "daily",
+      priority: 0.9,
+    },
+    {
+      url: `${baseUrl}/text`,
+      lastModified: now,
+      changeFrequency: "daily",
+      priority: 0.9,
+    },
+    // ── High-Value Explanatory & Content Pages ─────────────────────────────────
+    {
+      url: `${baseUrl}/how-it-works`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.8,
+    },
     {
       url: `${baseUrl}/about`,
       lastModified: now,
@@ -70,8 +88,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "monthly",
       priority: 0.5,
     },
-    // NOTE: /video and /text are live application screens — not content pages.
-    // They are intentionally excluded from this sitemap to prevent exposing
-    // private/session URLs to search engines. They should not be indexed.
   ];
 }
