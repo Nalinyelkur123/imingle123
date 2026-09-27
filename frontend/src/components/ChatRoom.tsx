@@ -518,6 +518,9 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
   // Start chat - join matchmaking queue
   const startChat = useCallback(() => {
+    if (mode === "video" && (!localStreamRef.current || cameraStatus !== "ready")) {
+      requestCameraAccess();
+    }
     cleanupPeerConnection(true);
     currentMatchRef.current = null;
     setCurrentMatch(null);
@@ -546,7 +549,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       mode,
       interests,
     });
-  }, [mode, interests, cleanupPeerConnection]);
+  }, [mode, interests, cameraStatus, requestCameraAccess, cleanupPeerConnection]);
 
   // Next stranger
   const handleNext = useCallback(() => {
