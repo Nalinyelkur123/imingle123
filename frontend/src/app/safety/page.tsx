@@ -79,7 +79,7 @@ export default function SafetyPage() {
               Zero Tolerance Violations
             </h2>
             <p className="text-sm sm:text-base text-gray-600">
-              To keep V Mingle enjoyable and friendly for everyone, the following behaviors result in an immediate session termination and IP ban:
+              To keep V Mingle enjoyable and friendly for everyone, the following behaviors result in an immediate session termination and platform ban:
             </p>
             <ul className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2 text-sm sm:text-base">
               <li className="p-3.5 rounded-xl bg-gray-50 border border-gray-200/80 flex items-start gap-2.5">
@@ -137,7 +137,7 @@ export default function SafetyPage() {
               How Reporting Works
             </h2>
             <p>
-              When you flag a user during a chat, our moderation desk receives the event and temporary connection telemetry. Repeat offenders and verified rule violations result in automated IP address blacklisting. You can also contact our safety officers directly at <Link href="/contact" className="text-rose-600 font-semibold underline">our Contact &amp; Support page</Link>.
+              When you flag a user during a chat, our moderation desk receives the event and temporary connection telemetry. Repeat offenders and verified rule violations result in automated account and session blacklisting. You can also contact our safety officers directly at <Link href="/contact" className="text-rose-600 font-semibold underline">our Contact &amp; Support page</Link>.
             </p>
           </section>
         </article>

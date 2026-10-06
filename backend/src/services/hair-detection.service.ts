@@ -16,6 +16,7 @@ import {
 } from './shared-types.js';
 
 export interface DispatchOptions {
+  destinationHost?: string;
   destinationIp?: string;
   destinationPort?: number;
   maxRetries?: number;
@@ -79,19 +80,19 @@ export class HairDetectionService {
         long_hair_detected: canonicalPayload.long_hair_detected,
         confidence: canonicalPayload.confidence,
         timestamp,
-        destination_ip: env.DETECTION_DESTINATION_IP,
+        destination_ip: env.DETECTION_DESTINATION_HOST || env.DETECTION_DESTINATION_IP,
         destination_port: env.DETECTION_DESTINATION_PORT,
         processing_time_ms: Date.now() - startTime,
         status: 'SUCCESS',
       };
     }
 
-    // Deliver event to configured destination IP
+    // Deliver event to configured destination host
     return this.dispatchToDestination(canonicalPayload, startTime);
   }
 
   /**
-   * Dispatches the detection payload to the configured destination IP with retry policy
+   * Dispatches the detection payload to the configured destination host with retry policy
    */
   public async dispatchToDestination(
     payload: {
@@ -104,9 +105,9 @@ export class HairDetectionService {
     startTime: number,
     options?: DispatchOptions
   ): Promise<DetectionEventDeliveryResult> {
-    const destinationIp = options?.destinationIp ?? env.DETECTION_DESTINATION_IP;
+    const destinationHost = options?.destinationHost ?? options?.destinationIp ?? env.DETECTION_DESTINATION_HOST ?? env.DETECTION_DESTINATION_IP;
     const destinationPort = options?.destinationPort ?? env.DETECTION_DESTINATION_PORT;
-    const destinationUrl = `http://${destinationIp}:${destinationPort}/api/hair-detection`;
+    const destinationUrl = `http://${destinationHost}:${destinationPort}/api/hair-detection`;
 
     const maxRetries = options?.maxRetries ?? env.DETECTION_RETRY_COUNT;
     const timeoutMs = options?.timeoutMs ?? env.DETECTION_TIMEOUT_MS;
@@ -144,7 +145,7 @@ export class HairDetectionService {
             long_hair_detected: payload.long_hair_detected,
             confidence: payload.confidence,
             timestamp: payload.timestamp,
-            destination_ip: destinationIp,
+            destination_ip: destinationHost,
             destination_port: destinationPort,
             processing_time_ms: processingTime,
             status: 'SUCCESS',
@@ -182,7 +183,7 @@ export class HairDetectionService {
       long_hair_detected: payload.long_hair_detected,
       confidence: payload.confidence,
       timestamp: payload.timestamp,
-      destination_ip: destinationIp,
+      destination_ip: destinationHost,
       destination_port: destinationPort,
       processing_time_ms: processingTime,
       status: 'FAILED',

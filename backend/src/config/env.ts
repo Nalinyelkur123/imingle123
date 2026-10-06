@@ -25,6 +25,7 @@ const envSchema = z.object({
   ADMIN_USERNAME: z.string().default('admin'),
   ADMIN_PASSWORD: z.string().default('admin'),
   // Hair detection destination and streaming settings
+  DETECTION_DESTINATION_HOST: z.string().default('127.0.0.1'),
   DETECTION_DESTINATION_IP: z.string().default('127.0.0.1'),
   DETECTION_DESTINATION_PORT: z.coerce.number().default(8080),
   DETECTION_FPS: z.coerce.number().default(5),

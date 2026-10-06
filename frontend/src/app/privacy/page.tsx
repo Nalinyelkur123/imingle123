@@ -48,7 +48,7 @@ export default function PrivacyPage() {
     {
       title: "2. Technical Data Processed for Connection & Safety",
       content:
-        "To deliver real-time video chat, our backend processes the minimum technical telemetry necessary: \n• Ephemeral Session Identifiers: A unique cryptographically signed UUID (e.g. sess_...) used strictly to pair users in the queue and recover temporary connection drops without mixing chats.\n• Network Routing Data: IP addresses and ICE candidates are utilized by signaling servers to establish peer connections and protect our servers against malicious DDoS and bot flooding. We never use IP addresses as a personal identity key.\n• Optional Interest Tags: Topic tags you voluntarily enter (e.g., #music, #tech) are used exclusively to match you with compatible chat partners and are discarded upon session teardown.",
+        "To deliver real-time video chat, our backend processes the minimum technical telemetry necessary: \n• Ephemeral Session Identifiers: A unique cryptographically signed token (e.g. sess_...) used strictly to pair users in the queue and recover temporary connection drops without mixing chats.\n• Connection Routing Data: Ephemeral signaling endpoints and ICE candidates are utilized by signaling servers to establish peer-to-peer WebRTC connections and protect our infrastructure against malicious bot flooding. We never track or use network addresses as a personal identity key.\n• Optional Interest Tags: Topic tags you voluntarily enter (e.g., #music, #tech) are used exclusively to match you with compatible chat partners and are discarded upon session teardown.",
     },
     {
       title: "3. Direct Peer-to-Peer Communication (WebRTC)",

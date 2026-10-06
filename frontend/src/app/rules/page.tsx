@@ -117,7 +117,7 @@ export default function RulesPage() {
                 Reporting & Rapid Safety Enforcement
               </h3>
               <p className="mt-1 text-xs sm:text-sm text-amber-900/80 dark:text-amber-200/80 leading-relaxed">
-                If you encounter a user violating our rules, click the <strong>Report</strong> button immediately in the video room. Our system automatically disconnects the offending peer, logs the incident for moderator review, and applies temporary or permanent IP restrictions to safeguard the community.
+                If you encounter a user violating our rules, click the <strong>Report</strong> button immediately in the video room. Our system automatically disconnects the offending peer, logs the incident for moderator review, and applies temporary or permanent platform restrictions to safeguard the community.
               </p>
             </div>
           </div>

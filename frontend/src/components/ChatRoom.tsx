@@ -127,6 +127,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   const pendingOfferRef = useRef<WebRTCOfferPayload | null>(null);
   const currentMatchRef = useRef<MatchInfo | null>(null);
   const iceServersRef = useRef<RTCIceServer[]>(DEFAULT_ICE_SERVERS);
+  const lastActionTimeRef = useRef<number>(0);
 
   // Keep currentMatchRef in sync
   useEffect(() => {
@@ -518,6 +519,12 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
   // Start chat - join matchmaking queue
   const startChat = useCallback(() => {
+    const now = Date.now();
+    if (now - lastActionTimeRef.current < 400) {
+      return;
+    }
+    lastActionTimeRef.current = now;
+
     if (mode === "video" && (!localStreamRef.current || cameraStatus !== "ready")) {
       requestCameraAccess();
     }
@@ -553,6 +560,12 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
   // Next stranger
   const handleNext = useCallback(() => {
+    const now = Date.now();
+    if (now - lastActionTimeRef.current < 400) {
+      return;
+    }
+    lastActionTimeRef.current = now;
+
     cleanupPeerConnection(true);
     const socket = connectSocket();
     socket.emit(SocketEvents.NEXT);
@@ -560,8 +573,28 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     setSharedInterest(null);
     currentMatchRef.current = null;
     setCurrentMatch(null);
-    startChat();
-  }, [cleanupPeerConnection, startChat]);
+    setChatState(ChatState.SEARCHING);
+
+    setMessages([
+      {
+        id: createUniqueId("sys"),
+        sender: "system",
+        text:
+          interests.length > 0
+            ? `Searching for strangers interested in: #${interests.join(", #")}...`
+            : "Looking for someone to chat with worldwide...",
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      },
+    ]);
+
+    socket.emit(SocketEvents.JOIN_QUEUE, {
+      mode,
+      interests,
+    });
+  }, [cleanupPeerConnection, mode, interests]);
 
   // Stop chat
   const handleStop = useCallback(() => {
@@ -576,6 +609,18 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     currentMatchRef.current = null;
     setCurrentMatch(null);
     setChatState(ChatState.IDLE);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: createUniqueId("sys"),
+        sender: "system",
+        text: "You have stopped the chat.",
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      },
+    ]);
   }, [stopConfirm, chatState, cleanupPeerConnection]);
 
   // 1. Initialize privacy-safe anonymous session on component mount & auto-start
@@ -1309,7 +1354,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     }`}
                   />
 
-                  {/* Camera Permission State: Insecure Context (HTTP across network/IP) */}
+                  {/* Camera Permission State: Insecure Context (HTTP across insecure origin) */}
                   {cameraStatus === "insecure_context" && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-30">
                       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20 text-amber-400 mb-1.5">

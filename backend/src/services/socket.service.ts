@@ -49,13 +49,6 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
         ? socket.handshake.headers.authorization.substring(7).trim()
         : null);
 
-    if (!token && socket.handshake.headers?.cookie) {
-      const match = socket.handshake.headers.cookie.match(/(?:umingle_sess|umingle_session)=([^;]+)/);
-      if (match) {
-        token = decodeURIComponent(match[1]);
-      }
-    }
-
     let verified = sessionService.verifyToken(token);
 
     if (!verified) {
@@ -163,6 +156,13 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
         const isSocketAlive = (id: string) => io.sockets.sockets.has(id);
         const result = matchmaker.joinQueue(activeSessionId, socket.id, mode, interests, activeUserId, isSocketAlive);
 
+        // If user was previously matched, notify that old partner that they left
+        if (result.previousPartnerSocketId) {
+          io.to(result.previousPartnerSocketId).emit(ServerEvents.MATCH_ENDED, {
+            reason: MatchEndReason.PARTNER_LEFT,
+          });
+        }
+
         if (result.matched && result.match && result.partnerSocketId) {
           const partnerSocket = io.sockets.sockets.get(result.partnerSocketId);
 
@@ -198,7 +198,7 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── LEAVE QUEUE ─────────────────────────────────────────────────────────
     socket.on(ClientEvents.LEAVE_QUEUE, () => {
-      matchmaker.leaveQueue(socket.data.sessionId);
+      matchmaker.leaveQueue(socket.data.sessionId, socket.id);
     });
 
     // ── SEND MESSAGE ────────────────────────────────────────────────────────

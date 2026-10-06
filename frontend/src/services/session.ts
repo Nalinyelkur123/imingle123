@@ -22,7 +22,7 @@ export interface AnonymousSession {
 export function getStoredSessionToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return sessionStorage.getItem(SESSION_STORAGE_KEY) || localStorage.getItem(SESSION_STORAGE_KEY);
+    return sessionStorage.getItem(SESSION_STORAGE_KEY);
   } catch {
     return null;
   }
@@ -31,7 +31,7 @@ export function getStoredSessionToken(): string | null {
 export function getStoredSessionId(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return sessionStorage.getItem(SESSION_ID_KEY) || localStorage.getItem(SESSION_ID_KEY);
+    return sessionStorage.getItem(SESSION_ID_KEY);
   } catch {
     return null;
   }
@@ -51,7 +51,7 @@ export function clearStoredSession(): void {
 
 /**
  * Initializes or continues an existing privacy-safe anonymous session.
- * Validates with the backend using HMAC token header and cookie fallback.
+ * Validates with the backend using HMAC token header.
  */
 export async function initAnonymousSession(
   mode: "video" | "text" = "video"
@@ -71,7 +71,6 @@ export async function initAnonymousSession(
     const res = await fetch(`${getApiBaseUrl()}/api/session/init`, {
       method: "POST",
       headers,
-      credentials: "include",
       body: JSON.stringify({ mode }),
     });
 
@@ -97,10 +96,12 @@ export async function initAnonymousSession(
 
       if (typeof window !== "undefined") {
         try {
-          localStorage.setItem(SESSION_STORAGE_KEY, sessionData.sessionToken);
-          localStorage.setItem(SESSION_ID_KEY, sessionData.sessionId);
+          // Strictly isolate session identity to this browser tab via sessionStorage
           sessionStorage.setItem(SESSION_STORAGE_KEY, sessionData.sessionToken);
           sessionStorage.setItem(SESSION_ID_KEY, sessionData.sessionId);
+          // Clean up any legacy shared localStorage keys to prevent cross-tab conflation
+          localStorage.removeItem(SESSION_STORAGE_KEY);
+          localStorage.removeItem(SESSION_ID_KEY);
         } catch {
           // storage may fail in private mode if restricted
         }
@@ -131,7 +132,6 @@ export async function endAnonymousSession(reason = "user_ended"): Promise<boolea
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      credentials: "include",
       body: JSON.stringify({ reason }),
     });
   } catch {

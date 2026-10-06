@@ -59,6 +59,9 @@ class MatchmakerService {
   // Reconnection timers indexed by sessionId
   private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
 
+  // Avoid immediate rematching with previous partner: sessionId -> lastPartnerSessionId
+  private lastPartnerSession: Map<string, string> = new Map();
+
   /**
    * Tracks socket connection and binds sessionId + userId.
    * A single session can have multiple sockets (e.g. tabs or reconnecting),
@@ -247,15 +250,29 @@ class MatchmakerService {
     interests: string[] = [],
     userId?: string,
     isSocketAlive?: (id: string) => boolean
-  ): { matched: boolean; match?: ActiveMatch; partnerSocketId?: string; partnerSessionId?: string } {
-    // If user is already in a match, end it first
+  ): {
+    matched: boolean;
+    match?: ActiveMatch;
+    partnerSocketId?: string;
+    partnerSessionId?: string;
+    previousPartnerSocketId?: string;
+  } {
+    // If user is already in a match, record previous partner and end it cleanly
+    let previousPartnerSocketId: string | undefined;
     const existingMatchId = this.sessionToMatch.get(sessionId);
     if (existingMatchId) {
+      const oldMatch = this.activeMatches.get(existingMatchId);
+      if (oldMatch) {
+        previousPartnerSocketId =
+          oldMatch.user1.sessionId === sessionId
+            ? oldMatch.user2.socketId
+            : oldMatch.user1.socketId;
+      }
       this.endMatch(existingMatchId, 'new_search');
     }
 
     // Remove any existing queue entry for this session or socket
-    this.leaveQueue(sessionId);
+    this.leaveQueue(sessionId, socketId);
 
     const normalizedInterests = interests
       .map((i) => i.trim().toLowerCase())
@@ -273,39 +290,61 @@ class MatchmakerService {
       }
     }
 
-    // Search for a partner in the waiting queue
+    // Self-match prevention: skip same session, socket, or user
+    const isEligible = (candidate: QueueEntry) => {
+      if (candidate.sessionId === sessionId || candidate.socketId === socketId) return false;
+      if (userId && this.socketToSession.get(candidate.socketId)?.userId === userId) return false;
+      return true;
+    };
+
+    // Search for an eligible partner in the waiting queue
     let partnerIndex = -1;
     let sharedInterest: string | null = null;
+    const lastPartnerSessionId = this.lastPartnerSession.get(sessionId);
 
-    // 1. Priority 1: match on shared interest
+    // 1. Priority 1: match on shared interest (random selection among interest candidates)
     if (normalizedInterests.length > 0) {
+      const interestMatches: { index: number; commonInterest: string }[] = [];
       for (let i = 0; i < queue.length; i++) {
         const candidate = queue[i];
-        // Self-match prevention: skip same session, socket, or user
-        if (candidate.sessionId === sessionId || candidate.socketId === socketId) continue;
-        if (userId && this.socketToSession.get(candidate.socketId)?.userId === userId) continue;
+        if (!isEligible(candidate)) continue;
 
         const common = candidate.interests.find((tag) =>
           normalizedInterests.includes(tag)
         );
         if (common) {
-          partnerIndex = i;
-          sharedInterest = common;
-          break;
+          interestMatches.push({ index: i, commonInterest: common });
         }
+      }
+
+      if (interestMatches.length > 0) {
+        // Prefer candidate who wasn't the immediate last partner if multiple exist
+        const preferred = interestMatches.filter(
+          (m) => queue[m.index].sessionId !== lastPartnerSessionId
+        );
+        const pool = preferred.length > 0 ? preferred : interestMatches;
+        const selected = pool[Math.floor(Math.random() * pool.length)];
+        partnerIndex = selected.index;
+        sharedInterest = selected.commonInterest;
       }
     }
 
-    // 2. Priority 2: match with the first waiting candidate
+    // 2. Priority 2: match with a random eligible stranger from waiting queue
     if (partnerIndex === -1 && queue.length > 0) {
+      const eligibleIndices: number[] = [];
       for (let i = 0; i < queue.length; i++) {
-        const candidate = queue[i];
-        // Self-match prevention: skip same session, socket, or user
-        if (candidate.sessionId === sessionId || candidate.socketId === socketId) continue;
-        if (userId && this.socketToSession.get(candidate.socketId)?.userId === userId) continue;
+        if (isEligible(queue[i])) {
+          eligibleIndices.push(i);
+        }
+      }
 
-        partnerIndex = i;
-        break;
+      if (eligibleIndices.length > 0) {
+        // If multiple eligible candidates exist, avoid immediate rematch with last partner
+        const preferredIndices = eligibleIndices.filter(
+          (idx) => queue[idx].sessionId !== lastPartnerSessionId
+        );
+        const pool = preferredIndices.length > 0 ? preferredIndices : eligibleIndices;
+        partnerIndex = pool[Math.floor(Math.random() * pool.length)];
       }
     }
 
@@ -355,6 +394,7 @@ class MatchmakerService {
         match: activeMatch,
         partnerSocketId: partner.socketId,
         partnerSessionId: partner.sessionId,
+        previousPartnerSocketId,
       };
     }
 
@@ -370,18 +410,22 @@ class MatchmakerService {
     queue.push(entry);
     sessionStore.updateSessionStatus(sessionId, 'queued').catch(() => {});
 
-    return { matched: false };
+    return { matched: false, previousPartnerSocketId };
   }
 
   /**
    * Removes a user from queue by sessionId or socketId
    */
-  public leaveQueue(sessionId: string): boolean {
+  public leaveQueue(sessionId: string, socketId?: string): boolean {
     const vLen = this.videoQueue.length;
     const tLen = this.textQueue.length;
 
-    this.videoQueue = this.videoQueue.filter((e) => e.sessionId !== sessionId);
-    this.textQueue = this.textQueue.filter((e) => e.sessionId !== sessionId);
+    this.videoQueue = this.videoQueue.filter(
+      (e) => e.sessionId !== sessionId && (!socketId || e.socketId !== socketId)
+    );
+    this.textQueue = this.textQueue.filter(
+      (e) => e.sessionId !== sessionId && (!socketId || e.socketId !== socketId)
+    );
 
     const removed = this.videoQueue.length !== vLen || this.textQueue.length !== tLen;
     if (removed) {
@@ -445,6 +489,10 @@ class MatchmakerService {
     this.sessionToMatch.delete(match.user1.sessionId);
     this.sessionToMatch.delete(match.user2.sessionId);
     this.activeMatches.delete(matchId);
+
+    // Record last partner relationship to prevent instant rematch after skip
+    this.lastPartnerSession.set(match.user1.sessionId, match.user2.sessionId);
+    this.lastPartnerSession.set(match.user2.sessionId, match.user1.sessionId);
 
     // Update store
     sessionStore.updateSessionStatus(match.user1.sessionId, 'active', null).catch(() => {});

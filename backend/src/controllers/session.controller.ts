@@ -10,19 +10,6 @@ import { sessionService } from '../services/session.service.js';
 import { logger } from '../utils/logger.js';
 import { ChatMode } from '../services/shared-types.js';
 
-// Helper to parse cookies from raw Cookie header
-function parseCookie(req: Request, name: string): string | null {
-  const cookieHeader = req.headers.cookie;
-  if (!cookieHeader) return null;
-  const matches = cookieHeader.split(';').map((c) => c.trim());
-  for (const cookie of matches) {
-    if (cookie.startsWith(`${name}=`)) {
-      return decodeURIComponent(cookie.substring(name.length + 1));
-    }
-  }
-  return null;
-}
-
 // Helper to extract session token from request
 function extractToken(req: Request): string | null {
   // 1. Authorization header: Bearer <token>
@@ -34,12 +21,6 @@ function extractToken(req: Request): string | null {
   // 2. Request body token
   if (req.body && typeof req.body.token === 'string') {
     return req.body.token.trim();
-  }
-
-  // 3. Cookie header
-  const cookieToken = parseCookie(req, 'umingle_sess');
-  if (cookieToken) {
-    return cookieToken.trim();
   }
 
   return null;
@@ -57,13 +38,6 @@ export async function initSession(req: Request, res: Response): Promise<void> {
 
     const session = await sessionService.createOrResumeSession(existingToken, mode, interests);
 
-    // Set privacy-conscious HttpOnly cookie
-    // SameSite=None + Secure allows cross-origin requests from Cloudflare frontend
-    const maxAgeSec = Math.floor((session.expiresAt - Date.now()) / 1000);
-    res.setHeader(
-      'Set-Cookie',
-      `umingle_sess=${encodeURIComponent(session.token)}; Max-Age=${maxAgeSec}; Path=/; HttpOnly; Secure; SameSite=None`
-    );
 
     const sessionData = {
       sessionId: session.sessionId,
@@ -151,12 +125,6 @@ export async function endSession(req: Request, res: Response): Promise<void> {
     if (verified) {
       await sessionService.endSession(verified.sessionId);
     }
-
-    // Clear session cookie
-    res.setHeader(
-      'Set-Cookie',
-      `umingle_sess=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None`
-    );
 
     res.status(200).json({
       status: 'ok',
