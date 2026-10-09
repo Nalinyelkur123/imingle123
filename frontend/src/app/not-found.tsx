@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { MingleeHeader } from "@/components/MingleeHeader";
-import { MingleeFooter } from "@/components/MingleeFooter";
+import { VMingleHeader } from "@/components/VMingleHeader";
+import { VMingleFooter } from "@/components/VMingleFooter";
 
 export default function NotFound() {
   return (
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-[#111827]">
-      <MingleeHeader />
+      <VMingleHeader />
 
       <main className="flex-1 flex flex-col items-center justify-center text-center px-4 py-16 sm:py-24">
         <span className="px-3.5 py-1 rounded-full bg-rose-50 border border-rose-200 text-xs font-bold text-[#e11d48] uppercase tracking-wider mb-4">
@@ -55,7 +55,7 @@ export default function NotFound() {
         </div>
       </main>
 
-      <MingleeFooter />
+      <VMingleFooter />
     </div>
   );
 }

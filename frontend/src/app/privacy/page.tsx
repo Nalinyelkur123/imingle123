@@ -1,5 +1,5 @@
-import { MingleeHeader } from "@/components/MingleeHeader";
-import { MingleeFooter } from "@/components/MingleeFooter";
+import { VMingleHeader } from "@/components/VMingleHeader";
+import { VMingleFooter } from "@/components/VMingleFooter";
 import Link from "next/link";
 import { Metadata } from "next";
 import { constructMetadata } from "@/config/site";
@@ -79,7 +79,7 @@ export default function PrivacyPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#fdfbf7] text-[#111827] dark:bg-[#121016] dark:text-[#f4f4f7] transition-colors">
-      <MingleeHeader />
+      <VMingleHeader />
 
       <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {/* Back Navigation */}
@@ -156,7 +156,7 @@ export default function PrivacyPage() {
         </div>
       </main>
 
-      <MingleeFooter />
+      <VMingleFooter />
     </div>
   );
 }

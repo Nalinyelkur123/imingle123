@@ -73,7 +73,7 @@ export class HairDetectionService {
     this.activeSessionDetections.set(sessionId, sessionStats);
 
     // If long hair is not detected, or if detection is disabled, record and return without sending HTTP
-    if (!env.DETECTION_ENABLED) {
+    if (!env.DETECTION_ENABLED || !canonicalPayload.long_hair_detected) {
       return {
         session_id: sessionId,
         user_id: userId,
@@ -165,6 +165,19 @@ export class HairDetectionService {
           }
         } else {
           lastError = String(err);
+        }
+
+        const cause = (err as { cause?: { code?: string; message?: string } })?.cause;
+        const code = (err as { code?: string })?.code || cause?.code;
+        const errStr = `${lastError} ${cause?.message || ''}`;
+        if (
+          code === 'ECONNREFUSED' ||
+          code === 'ENOTFOUND' ||
+          code === 'ECONNRESET' ||
+          /econnrefused|connection refused/i.test(errStr)
+        ) {
+          // Fast-fail after first failure if connection is refused to protect Node.js event loop
+          break;
         }
       }
 

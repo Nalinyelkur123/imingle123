@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
-import { MingleeHeader } from "@/components/MingleeHeader";
-import { MingleeFooter } from "@/components/MingleeFooter";
+import { VMingleHeader } from "@/components/VMingleHeader";
+import { VMingleFooter } from "@/components/VMingleFooter";
 import { constructMetadata, getBreadcrumbSchema } from "@/config/site";
 
 export const metadata: Metadata = constructMetadata({
@@ -31,7 +31,7 @@ export default function HowItWorksPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbs) }}
       />
-      <MingleeHeader />
+      <VMingleHeader />
 
       <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
         {/* Breadcrumb Navigation */}
@@ -215,7 +215,7 @@ export default function HowItWorksPage() {
         </section>
       </main>
 
-      <MingleeFooter />
+      <VMingleFooter />
     </div>
   );
 }

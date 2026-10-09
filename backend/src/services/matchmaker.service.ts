@@ -33,8 +33,26 @@ export interface ActiveMatch {
     interests: string[];
   };
   sharedInterest: string | null;
+  sharedInterests?: string[];
   startedAt: number;
   status: 'active' | 'reconnecting';
+}
+
+export function normalizeTag(tag: string): string {
+  return tag
+    .trim()
+    .toLowerCase()
+    .replace(/^#+/, '')
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 30);
+}
+
+export function normalizeInterests(interests: string[] = []): string[] {
+  if (!Array.isArray(interests)) return [];
+  const normalized = interests
+    .map((i) => (typeof i === 'string' ? normalizeTag(i) : ''))
+    .filter((i) => i.length > 0);
+  return Array.from(new Set(normalized)).slice(0, 10);
 }
 
 const RECONNECT_GRACE_PERIOD_MS = 15000; // 15 seconds
@@ -61,6 +79,17 @@ class MatchmakerService {
 
   // Avoid immediate rematching with previous partner: sessionId -> lastPartnerSessionId
   private lastPartnerSession: Map<string, string> = new Map();
+
+  // Interest search window before eligible for random stranger fallback (in ms)
+  private interestSearchWindowMs = 3000;
+
+  public setInterestSearchWindowMs(ms: number): void {
+    this.interestSearchWindowMs = ms;
+  }
+
+  public getInterestSearchWindowMs(): number {
+    return this.interestSearchWindowMs;
+  }
 
   /**
    * Tracks socket connection and binds sessionId + userId.
@@ -274,9 +303,7 @@ class MatchmakerService {
     // Remove any existing queue entry for this session or socket
     this.leaveQueue(sessionId, socketId);
 
-    const normalizedInterests = interests
-      .map((i) => i.trim().toLowerCase())
-      .filter((i) => i.length > 0);
+    const normalizedInterests = normalizeInterests(interests);
 
     const queue = mode === 'video' ? this.videoQueue : this.textQueue;
 
@@ -297,54 +324,109 @@ class MatchmakerService {
       return true;
     };
 
-    // Search for an eligible partner in the waiting queue
     let partnerIndex = -1;
     let sharedInterest: string | null = null;
+    let sharedInterests: string[] = [];
     const lastPartnerSessionId = this.lastPartnerSession.get(sessionId);
 
-    // 1. Priority 1: match on shared interest (random selection among interest candidates)
+    // 1. Priority 1: match on shared interests (highest overlap score, last partner avoidance, FIFO)
     if (normalizedInterests.length > 0) {
-      const interestMatches: { index: number; commonInterest: string }[] = [];
+      interface CandidateMatch {
+        index: number;
+        shared: string[];
+        score: number;
+        isLastPartner: boolean;
+        joinedAt: number;
+      }
+
+      const interestCandidates: CandidateMatch[] = [];
+
       for (let i = 0; i < queue.length; i++) {
         const candidate = queue[i];
         if (!isEligible(candidate)) continue;
 
-        const common = candidate.interests.find((tag) =>
+        const common = candidate.interests.filter((tag) =>
           normalizedInterests.includes(tag)
         );
-        if (common) {
-          interestMatches.push({ index: i, commonInterest: common });
+
+        if (common.length > 0) {
+          interestCandidates.push({
+            index: i,
+            shared: common,
+            score: common.length,
+            isLastPartner: candidate.sessionId === lastPartnerSessionId,
+            joinedAt: candidate.joinedAt,
+          });
         }
       }
 
-      if (interestMatches.length > 0) {
-        // Prefer candidate who wasn't the immediate last partner if multiple exist
-        const preferred = interestMatches.filter(
-          (m) => queue[m.index].sessionId !== lastPartnerSessionId
-        );
-        const pool = preferred.length > 0 ? preferred : interestMatches;
-        const selected = pool[Math.floor(Math.random() * pool.length)];
+      if (interestCandidates.length > 0) {
+        // Sort:
+        // 1. Highest overlap score first (e.g. 2 shared interests beats 1)
+        // 2. Avoid immediate last partner if other interest candidates exist
+        // 3. FIFO fairness (candidate who has waited longer in queue is paired first)
+        interestCandidates.sort((a, b) => {
+          if (b.score !== a.score) {
+            return b.score - a.score;
+          }
+          if (a.isLastPartner !== b.isLastPartner) {
+            return (a.isLastPartner ? 1 : 0) - (b.isLastPartner ? 1 : 0);
+          }
+          return a.joinedAt - b.joinedAt;
+        });
+
+        const selected = interestCandidates[0];
         partnerIndex = selected.index;
-        sharedInterest = selected.commonInterest;
+        sharedInterests = selected.shared;
+        sharedInterest = selected.shared[0] || null;
       }
     }
 
     // 2. Priority 2: match with a random eligible stranger from waiting queue
-    if (partnerIndex === -1 && queue.length > 0) {
-      const eligibleIndices: number[] = [];
+    // Triggered immediately if incoming user entered NO interests (pure random mode),
+    // or if the search window is disabled/0 (e.g. testing)
+    const canDoImmediateRandom = normalizedInterests.length === 0 || this.interestSearchWindowMs === 0;
+
+    if (partnerIndex === -1 && canDoImmediateRandom && queue.length > 0) {
+      interface StrangerCandidate {
+        index: number;
+        isLastPartner: boolean;
+        joinedAt: number;
+      }
+
+      const now = Date.now();
+      const eligibleStrangers: StrangerCandidate[] = [];
       for (let i = 0; i < queue.length; i++) {
-        if (isEligible(queue[i])) {
-          eligibleIndices.push(i);
+        const candidate = queue[i];
+        if (!isEligible(candidate)) continue;
+
+        // Candidate must either have no interests, or have waited past the interest search window
+        const isReadyForRandom =
+          candidate.interests.length === 0 ||
+          this.interestSearchWindowMs === 0 ||
+          now - candidate.joinedAt >= this.interestSearchWindowMs;
+
+        if (isReadyForRandom) {
+          eligibleStrangers.push({
+            index: i,
+            isLastPartner: candidate.sessionId === lastPartnerSessionId,
+            joinedAt: candidate.joinedAt,
+          });
         }
       }
 
-      if (eligibleIndices.length > 0) {
-        // If multiple eligible candidates exist, avoid immediate rematch with last partner
-        const preferredIndices = eligibleIndices.filter(
-          (idx) => queue[idx].sessionId !== lastPartnerSessionId
-        );
-        const pool = preferredIndices.length > 0 ? preferredIndices : eligibleIndices;
-        partnerIndex = pool[Math.floor(Math.random() * pool.length)];
+      if (eligibleStrangers.length > 0) {
+        // Sort: non-last partner first, then oldest waiting candidate (FIFO)
+        eligibleStrangers.sort((a, b) => {
+          if (a.isLastPartner !== b.isLastPartner) {
+            return (a.isLastPartner ? 1 : 0) - (b.isLastPartner ? 1 : 0);
+          }
+          return a.joinedAt - b.joinedAt;
+        });
+
+        partnerIndex = eligibleStrangers[0].index;
+        sharedInterest = null;
+        sharedInterests = [];
       }
     }
 
@@ -367,6 +449,7 @@ class MatchmakerService {
           interests: partner.interests,
         },
         sharedInterest,
+        sharedInterests,
         startedAt: Date.now(),
         status: 'active',
       };
@@ -517,6 +600,147 @@ class MatchmakerService {
       textQueueCount: this.textQueue.length,
       videoQueueCount: this.videoQueue.length,
     };
+  }
+
+  /**
+   * Sweeps queues to form matches for candidates whose interest search window
+   * has elapsed (falling back to random matching), or queued candidates who share interests.
+   */
+  public sweepQueues(isSocketAlive?: (id: string) => boolean): Array<{
+    match: ActiveMatch;
+    partnerSocketId: string;
+    partnerSessionId: string;
+  }> {
+    const results: Array<{ match: ActiveMatch; partnerSocketId: string; partnerSessionId: string }> = [];
+    const now = Date.now();
+
+    for (const mode of ['video', 'text'] as const) {
+      const queue = mode === 'video' ? this.videoQueue : this.textQueue;
+
+      // 1. Prune dead sockets
+      if (isSocketAlive) {
+        for (let i = queue.length - 1; i >= 0; i--) {
+          if (!isSocketAlive(queue[i].socketId)) {
+            queue.splice(i, 1);
+          }
+        }
+      }
+
+      // 2. Pair candidates who share interests
+      let foundInterestMatch = true;
+      while (foundInterestMatch && queue.length >= 2) {
+        foundInterestMatch = false;
+        let bestPair: { i: number; j: number; shared: string[]; score: number } | null = null;
+
+        for (let i = 0; i < queue.length; i++) {
+          for (let j = i + 1; j < queue.length; j++) {
+            const c1 = queue[i];
+            const c2 = queue[j];
+            if (c1.sessionId === c2.sessionId || c1.socketId === c2.socketId) continue;
+
+            const common = c1.interests.filter((t) => c2.interests.includes(t));
+            if (common.length > 0) {
+              if (!bestPair || common.length > bestPair.score) {
+                bestPair = { i, j, shared: common, score: common.length };
+              }
+            }
+          }
+        }
+
+        if (bestPair) {
+          const p2 = queue.splice(bestPair.j, 1)[0];
+          const p1 = queue.splice(bestPair.i, 1)[0];
+
+          const matchId = `match_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          const activeMatch: ActiveMatch = {
+            matchId,
+            mode,
+            user1: { sessionId: p1.sessionId, socketId: p1.socketId, interests: p1.interests },
+            user2: { sessionId: p2.sessionId, socketId: p2.socketId, interests: p2.interests },
+            sharedInterest: bestPair.shared[0] || null,
+            sharedInterests: bestPair.shared,
+            startedAt: Date.now(),
+            status: 'active',
+          };
+
+          this.activeMatches.set(matchId, activeMatch);
+          this.sessionToMatch.set(p1.sessionId, matchId);
+          this.sessionToMatch.set(p2.sessionId, matchId);
+
+          sessionStore.updateSessionStatus(p1.sessionId, 'matched', matchId).catch(() => {});
+          sessionStore.updateSessionStatus(p2.sessionId, 'matched', matchId).catch(() => {});
+          sessionStore.recordMatch({
+            matchId,
+            sessionId1: p1.sessionId,
+            sessionId2: p2.sessionId,
+            mode,
+            sharedInterest: activeMatch.sharedInterest,
+            startedAt: activeMatch.startedAt,
+            endedAt: null,
+            endReason: null,
+          }).catch(() => {});
+
+          results.push({ match: activeMatch, partnerSocketId: p2.socketId, partnerSessionId: p2.sessionId });
+          foundInterestMatch = true;
+        }
+      }
+
+      // 3. Fallback matching for candidates whose interest search window has elapsed, or who have no interests
+      let foundRandomMatch = true;
+      while (foundRandomMatch && queue.length >= 2) {
+        foundRandomMatch = false;
+
+        const readyIndices: number[] = [];
+        for (let i = 0; i < queue.length; i++) {
+          const c = queue[i];
+          if (c.interests.length === 0 || this.interestSearchWindowMs === 0 || now - c.joinedAt >= this.interestSearchWindowMs) {
+            readyIndices.push(i);
+          }
+        }
+
+        if (readyIndices.length >= 2) {
+          const idx2 = readyIndices[1];
+          const idx1 = readyIndices[0];
+
+          const p2 = queue.splice(idx2, 1)[0];
+          const p1 = queue.splice(idx1, 1)[0];
+
+          const matchId = `match_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          const activeMatch: ActiveMatch = {
+            matchId,
+            mode,
+            user1: { sessionId: p1.sessionId, socketId: p1.socketId, interests: p1.interests },
+            user2: { sessionId: p2.sessionId, socketId: p2.socketId, interests: p2.interests },
+            sharedInterest: null,
+            sharedInterests: [],
+            startedAt: Date.now(),
+            status: 'active',
+          };
+
+          this.activeMatches.set(matchId, activeMatch);
+          this.sessionToMatch.set(p1.sessionId, matchId);
+          this.sessionToMatch.set(p2.sessionId, matchId);
+
+          sessionStore.updateSessionStatus(p1.sessionId, 'matched', matchId).catch(() => {});
+          sessionStore.updateSessionStatus(p2.sessionId, 'matched', matchId).catch(() => {});
+          sessionStore.recordMatch({
+            matchId,
+            sessionId1: p1.sessionId,
+            sessionId2: p2.sessionId,
+            mode,
+            sharedInterest: null,
+            startedAt: activeMatch.startedAt,
+            endedAt: null,
+            endReason: null,
+          }).catch(() => {});
+
+          results.push({ match: activeMatch, partnerSocketId: p2.socketId, partnerSessionId: p2.sessionId });
+          foundRandomMatch = true;
+        }
+      }
+    }
+
+    return results;
   }
 }
 

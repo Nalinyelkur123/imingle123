@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useState, useEffect, KeyboardEvent } from "react";
-import { useInterests } from "@/hooks/useInterests";
+import { useInterests, parseAndNormalizeInterests } from "@/hooks/useInterests";
 import { fetchLiveStats } from "@/services/api";
 import { connectSocket } from "@/services/socket";
 
@@ -12,6 +13,15 @@ const AVATARS = [
   "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&h=120&q=80",
   "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&h=120&q=80",
   "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=120&h=120&q=80",
+];
+
+const SUGGESTED_INTERESTS = [
+  "gaming",
+  "music",
+  "coding",
+  "anime",
+  "movies",
+  "travel",
 ];
 
 export function HomeHeroInteraction() {
@@ -41,11 +51,35 @@ export function HomeHeroInteraction() {
     };
   }, []);
 
+  const addInterestsFromInput = (raw: string) => {
+    const newTags = parseAndNormalizeInterests(raw);
+    if (newTags.length > 0) {
+      const merged = Array.from(new Set([...interests, ...newTags])).slice(0, 10);
+      saveInterests(merged);
+    }
+  };
+
+  const handleRemoveInterest = (tag: string) => {
+    saveInterests(interests.filter((t) => t !== tag));
+  };
+
+  const handleToggleSuggested = (tag: string) => {
+    if (interests.includes(tag)) {
+      handleRemoveInterest(tag);
+    } else {
+      const merged = Array.from(new Set([...interests, tag])).slice(0, 10);
+      saveInterests(merged);
+    }
+  };
+
+  const handleClearAll = () => {
+    saveInterests([]);
+  };
+
   const handleStartChat = (overrideMode?: "video" | "text") => {
     const targetMode = overrideMode || activeMode;
-    const trimmed = inputValue.trim().replace(/^,+|,+$/g, "");
-    if (trimmed && !interests.includes(trimmed)) {
-      saveInterests([...interests, trimmed]);
+    if (inputValue.trim()) {
+      addInterestsFromInput(inputValue);
     }
     router.push(targetMode === "video" ? "/video" : "/text");
   };
@@ -53,9 +87,8 @@ export function HomeHeroInteraction() {
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
-      const trimmed = inputValue.trim().replace(/^,+|,+$/g, "");
-      if (trimmed && !interests.includes(trimmed)) {
-        saveInterests([...interests, trimmed]);
+      if (inputValue.trim()) {
+        addInterestsFromInput(inputValue);
         setInputValue("");
       } else {
         handleStartChat();
@@ -71,9 +104,8 @@ export function HomeHeroInteraction() {
         <Link
           href="/video"
           onClick={() => {
-            const trimmed = inputValue.trim().replace(/^,+|,+$/g, "");
-            if (trimmed && !interests.includes(trimmed)) {
-              saveInterests([...interests, trimmed]);
+            if (inputValue.trim()) {
+              addInterestsFromInput(inputValue);
             }
             setActiveMode("video");
           }}
@@ -94,9 +126,8 @@ export function HomeHeroInteraction() {
         <Link
           href="/text"
           onClick={() => {
-            const trimmed = inputValue.trim().replace(/^,+|,+$/g, "");
-            if (trimmed && !interests.includes(trimmed)) {
-              saveInterests([...interests, trimmed]);
+            if (inputValue.trim()) {
+              addInterestsFromInput(inputValue);
             }
             setActiveMode("text");
           }}
@@ -123,7 +154,7 @@ export function HomeHeroInteraction() {
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Add your interests (e.g. music, travel, movies)"
+          placeholder="Add interests (e.g. music, coding, anime)"
           className="w-full min-w-0 bg-transparent py-2 text-xs sm:text-sm text-gray-800 placeholder-gray-400 outline-none"
         />
 
@@ -141,18 +172,69 @@ export function HomeHeroInteraction() {
         </button>
       </div>
 
+      {/* Selected Interest Chips */}
+      {interests.length > 0 && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 px-0.5">
+          {interests.map((tag) => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 rounded-lg bg-rose-50 border border-rose-200/80 px-2 py-0.5 text-[11px] font-semibold text-[#f43f5e] shadow-2xs animate-fade-in"
+            >
+              <span>#{tag}</span>
+              <button
+                type="button"
+                onClick={() => handleRemoveInterest(tag)}
+                className="text-rose-400 hover:text-red-600 cursor-pointer font-bold ml-0.5 text-[10px]"
+                title={`Remove #${tag}`}
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={handleClearAll}
+            className="text-[10px] text-gray-400 hover:text-gray-600 underline cursor-pointer ml-1"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
+      {/* Popular Suggestions Row */}
+      <div className="mt-3 flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-[11px]">
+        <span className="text-gray-400 font-medium shrink-0 text-[10px]">Popular:</span>
+        {SUGGESTED_INTERESTS.map((tag) => {
+          const isSelected = interests.includes(tag);
+          return (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => handleToggleSuggested(tag)}
+              className={`shrink-0 rounded-full px-2.5 py-0.5 font-medium transition-all cursor-pointer text-[10px] sm:text-[11px] ${
+                isSelected
+                  ? "bg-rose-500 text-white shadow-xs font-semibold"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200/80 hover:text-gray-800"
+              }`}
+            >
+              #{tag}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Avatar Stack & Dynamic Online Count */}
       <div className="mt-4 flex items-center justify-center gap-3">
         <div className="flex -space-x-2 overflow-hidden">
           {AVATARS.map((src, i) => (
             <div key={i} className="relative h-7 w-7 rounded-full border-2 border-white shadow-xs overflow-hidden">
-              <img
+              <Image
                 src={src}
                 alt={`Active V Mingle community member ${i + 1}`}
                 width={28}
                 height={28}
+                unoptimized
                 className="h-full w-full object-cover"
-                loading="lazy"
               />
             </div>
           ))}

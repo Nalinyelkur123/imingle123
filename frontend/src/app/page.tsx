@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
-import { MingleeHeader } from "@/components/MingleeHeader";
-import { MingleeFooter } from "@/components/MingleeFooter";
+import { VMingleHeader } from "@/components/VMingleHeader";
+import { VMingleFooter } from "@/components/VMingleFooter";
 import { HomeHeroInteraction } from "@/components/HomeHeroInteraction";
 import { HomeFaqAccordion } from "@/components/HomeFaqAccordion";
 import { constructMetadata, getFaqSchema } from "@/config/site";
@@ -117,7 +117,7 @@ export default function HomePage() {
       </div>
 
       {/* Navigation Header */}
-      <MingleeHeader />
+      <VMingleHeader />
 
       {/* =================================================================== */}
       {/* HERO SECTION                                                        */}
@@ -409,7 +409,7 @@ export default function HomePage() {
       </main>
 
       {/* Footer */}
-      <MingleeFooter />
+      <VMingleFooter />
     </div>
   );
 }

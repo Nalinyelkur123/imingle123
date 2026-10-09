@@ -58,7 +58,7 @@ export interface ISessionStore {
   recordMatch(match: SessionMatchRecord): Promise<void>;
   endMatchRecord(matchId: string, endReason: string): Promise<void>;
   saveReport(report: ReportRecord): Promise<void>;
-  getReports?(): Promise<ReportRecord[]>;
+  getReports(): Promise<ReportRecord[]>;
   pruneExpiredSessions(): Promise<number>;
   destroy?(): void;
 }
@@ -159,6 +159,16 @@ class MemorySessionStore implements ISessionStore {
       if (now > session.expiresAt) {
         this.sessions.delete(id);
         pruned++;
+      }
+    }
+    for (const [matchId, match] of this.matches.entries()) {
+      if (match.endedAt && now - match.endedAt > 3600000) {
+        this.matches.delete(matchId);
+      }
+    }
+    for (const [reportId, report] of this.reports.entries()) {
+      if (now - report.createdAt > 86400000) {
+        this.reports.delete(reportId);
       }
     }
     return pruned;
