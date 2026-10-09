@@ -1,5 +1,5 @@
-import { MingleeHeader } from "@/components/MingleeHeader";
-import { MingleeFooter } from "@/components/MingleeFooter";
+import { VMingleHeader } from "@/components/VMingleHeader";
+import { VMingleFooter } from "@/components/VMingleFooter";
 import Link from "next/link";
 import { Metadata } from "next";
 import { constructMetadata } from "@/config/site";
@@ -59,7 +59,7 @@ export default function RulesPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#fdfbf7] text-[#111827] dark:bg-[#121016] dark:text-[#f4f4f7] transition-colors">
-      <MingleeHeader />
+      <VMingleHeader />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {/* Back Link */}
@@ -146,7 +146,7 @@ export default function RulesPage() {
         </div>
       </main>
 
-      <MingleeFooter />
+      <VMingleFooter />
     </div>
   );
 }

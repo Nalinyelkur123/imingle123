@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { connectSocket } from "@/services/socket";
 import { fetchLiveStats } from "@/services/api";
@@ -83,15 +84,18 @@ export function Header() {
   };
 
   return (
-    <header className="shrink-0 h-[52px] sm:h-[58px] relative z-50 flex w-full items-center justify-between px-3 sm:px-4 lg:px-6 bg-[#fdfbf7] dark:bg-[#121016] border-b border-gray-200/70 dark:border-white/5">
+    <header className="shrink-0 relative z-50 flex w-full items-center justify-between px-3 sm:px-4 lg:px-6 bg-[#fdfbf7] dark:bg-[#121016] border-b border-gray-200/70 dark:border-white/5 pt-[env(safe-area-inset-top,0px)] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] h-[calc(48px+env(safe-area-inset-top,0px))] sm:h-[calc(56px+env(safe-area-inset-top,0px))] mobile-landscape:h-[calc(40px+env(safe-area-inset-top,0px))]">
       {/* V Mingle Logo */}
       <Link href="/" className="noSelect flex items-center gap-2.5 sm:gap-3 group" id="vmingle-logo-link">
         {/* Rounded Brand Icon */}
         <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 p-0.5 shadow-sm group-hover:scale-105 transition-transform overflow-hidden">
           <div className="h-full w-full rounded-[10px] bg-white flex items-center justify-center p-1 overflow-hidden">
-            <img
+            <Image
               src="/favicon.png"
               alt="V Mingle logo"
+              width={32}
+              height={32}
+              unoptimized
               className="h-full w-full object-contain select-none pointer-events-none"
             />
           </div>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export function VMingleFooter() {
   return (
@@ -9,9 +10,12 @@ export function VMingleFooter() {
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 p-0.5 shadow-sm overflow-hidden">
             <div className="h-full w-full rounded-[10px] bg-white flex items-center justify-center p-1 overflow-hidden">
-              <img
+              <Image
                 src="/favicon.png"
                 alt="V Mingle logo"
+                width={36}
+                height={36}
+                unoptimized
                 className="h-full w-full object-contain select-none pointer-events-none"
               />
             </div>
@@ -126,4 +130,3 @@ export function VMingleFooter() {
   );
 }
 
-export { VMingleFooter as MingleeFooter };

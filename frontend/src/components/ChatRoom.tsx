@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import Image from "next/image";
 import { Header } from "@/components/Header";
-import { useInterests } from "@/hooks/useInterests";
+import { useInterests, parseAndNormalizeInterests } from "@/hooks/useInterests";
 import { useHairDetection } from "@/hooks/useHairDetection";
+import { useMediaStream } from "@/hooks/useMediaStream";
 import {
   ChatState,
   ReportReason,
@@ -14,7 +16,6 @@ import {
   WebRTCAnswerPayload,
   ICECandidatePayload,
   MatchEndedPayload,
-  submitReportApi,
   fetchIceServers,
 } from "@/services/api";
 import { connectSocket } from "@/services/socket";
@@ -57,20 +58,44 @@ const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   },
 ];
 
+const SUGGESTED_MODAL_TAGS = [
+  "gaming",
+  "music",
+  "coding",
+  "anime",
+  "movies",
+  "travel",
+  "sports",
+  "tech",
+  "art",
+  "fitness",
+];
+
 let msgCounter = 0;
 function createUniqueId(prefix = "msg"): string {
   msgCounter += 1;
   return `${prefix}-${Date.now()}-${msgCounter}-${Math.random().toString(36).substring(2, 7)}`;
 }
 
+function debugLog(...args: unknown[]): void {
+  if (process.env.NODE_ENV !== "production") {
+    console.log(...args);
+  }
+}
+
 export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomProps) {
   const [mode] = useState<"video" | "text">(initialMode);
-  const [chatState, setChatState] = useState<ChatState>(
-    autoStart ? ChatState.SEARCHING : ChatState.IDLE
-  );
+  const [chatState, setChatState] = useState<ChatState>(() => {
+    // Only auto-start immediately into SEARCHING if in text mode.
+    // In video mode, we wait for verified camera/microphone permission before entering queue.
+    if (autoStart && initialMode === "text") {
+      return ChatState.SEARCHING;
+    }
+    return ChatState.IDLE;
+  });
   const [stopConfirm, setStopConfirm] = useState(false);
   const [messages, setMessages] = useState<Message[]>(() => {
-    if (autoStart) {
+    if (autoStart && initialMode === "text") {
       return [
         {
           id: createUniqueId("sys"),
@@ -89,6 +114,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   const [sharedInterest, setSharedInterest] = useState<string | null>(null);
   const [currentMatch, setCurrentMatch] = useState<MatchInfo | null>(null);
   const [remoteStreamActive, setRemoteStreamActive] = useState(false);
+  const [remoteAutoplayBlocked, setRemoteAutoplayBlocked] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showInterestsModal, setShowInterestsModal] = useState(false);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
@@ -101,26 +127,82 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   const [session, setSession] = useState<AnonymousSession | null>(null);
   const [peerReconnecting, setPeerReconnecting] = useState(false);
 
-  // Local media controls & status
-  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  // Centralized media device & stream management via useMediaStream hook
+  const {
+    status: mediaStatus,
+    stream: localStream,
+    errorMessage: mediaErrorMessage,
+    isAudioMuted,
+    isVideoMuted,
+    audioOnly,
+    videoOnly,
+    deviceInfo,
+    acquireMedia,
+    toggleAudio,
+    toggleVideo,
+    switchCamera,
+    releaseMedia,
+    checkPermissionState,
+  } = useMediaStream(mode);
+
   const [isMirrored, setIsMirrored] = useState(true);
-  const [cameraStatus, setCameraStatus] = useState<"loading" | "ready" | "denied" | "insecure_context">("loading");
-  const [cameraErrorMessage, setCameraErrorMessage] = useState<string>("");
 
   // Mobile layout switch (PiP vs Split view on small screens)
   const [mobileViewMode, setMobileViewMode] = useState<"pip" | "split">("pip");
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Dynamic mobile viewport and keyboard detection
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateViewport = () => {
+      const vv = window.visualViewport;
+      const height = vv ? vv.height : window.innerHeight;
+      setViewportHeight(height);
+
+      // On mobile devices, virtual keyboard reduces visualViewport height substantially
+      if (vv && window.innerHeight - vv.height > 120) {
+        setIsKeyboardOpen(true);
+      } else {
+        setIsKeyboardOpen(false);
+      }
+    };
+
+    updateViewport();
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", updateViewport);
+      window.visualViewport.addEventListener("scroll", updateViewport);
+    }
+    window.addEventListener("resize", updateViewport);
+    window.addEventListener("orientationchange", updateViewport);
+
+    return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", updateViewport);
+        window.visualViewport.removeEventListener("scroll", updateViewport);
+      }
+      window.removeEventListener("resize", updateViewport);
+      window.removeEventListener("orientationchange", updateViewport);
+    };
+  }, []);
+
   // Interests
   const [interests, setInterests] = useInterests();
   const [interestInput, setInterestInput] = useState("");
+  const interestsRef = useRef(interests);
+  useEffect(() => {
+    interestsRef.current = interests;
+  }, [interests]);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const localStreamRef = useRef<MediaStream | null>(null);
   const remoteMediaStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const iceCandidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
@@ -128,6 +210,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   const currentMatchRef = useRef<MatchInfo | null>(null);
   const iceServersRef = useRef<RTCIceServer[]>(DEFAULT_ICE_SERVERS);
   const lastActionTimeRef = useRef<number>(0);
+  const lastSendTimeRef = useRef<number>(0);
 
   // Keep currentMatchRef in sync
   useEffect(() => {
@@ -148,7 +231,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   // Flush queued ICE candidates after remoteDescription is set
   const flushIceCandidates = useCallback(async (pc: RTCPeerConnection) => {
     if (iceCandidateQueueRef.current.length > 0) {
-      console.log(`[ICE] Flushing ${iceCandidateQueueRef.current.length} queued candidates`);
+      debugLog(`[ICE] Flushing ${iceCandidateQueueRef.current.length} queued candidates`);
     }
     const candidates = [...iceCandidateQueueRef.current];
     iceCandidateQueueRef.current = [];
@@ -156,7 +239,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       if (candidateInit && candidateInit.candidate) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidateInit));
-          console.log("[ICE] Queued candidate applied successfully");
+          debugLog("[ICE] Queued candidate applied successfully");
         } catch (err) {
           console.warn("[ICE] Handled error applying queued candidate:", err);
         }
@@ -169,7 +252,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     videoRef: localVideoRef,
     sessionId: session?.sessionId,
     userId: session?.userId,
-    enabled: mode === "video" && cameraStatus === "ready",
+    enabled: mode === "video" && mediaStatus === "ready" && !isVideoMuted,
     fps: 5,
   });
 
@@ -201,160 +284,91 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       remoteVideoRef.current.srcObject = null;
     }
     setRemoteStreamActive(false);
+    setRemoteAutoplayBlocked(false);
   }, []);
 
-  // Request camera and microphone if mode is video
-  const requestCameraAccess = useCallback(() => {
-    if (mode !== "video") return;
-    setCameraStatus("loading");
-    setCameraErrorMessage("");
-
-    if (typeof window === "undefined") return;
-
-    console.log("[WEBRTC] getUserMedia started");
-
-    // Check for Secure Context requirement (HTTPS or localhost)
-    if (!window.isSecureContext && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
-      console.warn("[WEBRTC] getUserMedia failed: Insecure context. WebRTC requires HTTPS or localhost.");
-      setCameraStatus("insecure_context");
-      setCameraErrorMessage(
-        "Camera & microphone access requires HTTPS when accessed from other devices or networks. Please access via HTTPS or a secure tunnel (e.g. Cloudflare / ngrok)."
-      );
-      return;
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      console.warn("[WEBRTC] getUserMedia failed: mediaDevices.getUserMedia not supported on this browser.");
-      setCameraStatus("denied");
-      setCameraErrorMessage(
-        "Your browser does not support camera/microphone access in this context. Please use a modern browser (Chrome, Safari, Firefox, Edge) over HTTPS."
-      );
-      return;
-    }
-
-    const tryGetUserMedia = async () => {
-      try {
-        return await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-          audio: true,
-        });
-      } catch {
-        try {
-          return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        } catch {
-          return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        }
-      }
-    };
-
-    tryGetUserMedia()
-      .then((stream) => {
-        console.log("[WEBRTC] getUserMedia success. Active stream:", stream.id);
-        localStreamRef.current = stream;
-        setCameraStatus("ready");
-        setCameraErrorMessage("");
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-          localVideoRef.current.play().catch(() => {});
-        }
-
-        // Dynamically attach tracks to active RTCPeerConnection if one is negotiating
-        const pc = peerConnectionRef.current;
-        if (pc && pc.connectionState !== "closed") {
-          const videoTrack = stream.getVideoTracks()[0];
-          const audioTrack = stream.getAudioTracks()[0];
-
-          const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
-          let videoAttached = false;
-          let audioAttached = false;
-
-          transceivers.forEach((t) => {
-            const isVideo = t.receiver.track?.kind === "video" || t.sender.track?.kind === "video";
-            const isAudio = t.receiver.track?.kind === "audio" || t.sender.track?.kind === "audio";
-            if (isVideo && videoTrack) {
-              t.sender.replaceTrack(videoTrack).catch(() => {});
-              t.direction = "sendrecv";
-              videoAttached = true;
-            } else if (isAudio && audioTrack) {
-              t.sender.replaceTrack(audioTrack).catch(() => {});
-              t.direction = "sendrecv";
-              audioAttached = true;
-            }
-          });
-
-          if (!videoAttached && videoTrack) {
-            try { pc.addTrack(videoTrack, stream); } catch {}
-          }
-          if (!audioAttached && audioTrack) {
-            try { pc.addTrack(audioTrack, stream); } catch {}
-          }
-          console.log("[WEBRTC] local tracks added to active peer connection");
-        }
-      })
-      .catch((err: unknown) => {
-        console.warn("[WEBRTC] getUserMedia failed:", err);
-        setCameraStatus("denied");
-        const errorName = err instanceof Error ? err.name : "";
-        if (errorName === "NotAllowedError" || errorName === "PermissionDeniedError") {
-          setCameraErrorMessage(
-            "Camera and microphone permission was denied. Please click the camera/lock icon in your browser address bar to allow permissions, then click Retry."
-          );
-        } else if (errorName === "NotFoundError" || errorName === "DevicesNotFoundError") {
-          setCameraErrorMessage("No camera or microphone hardware found on this device.");
-        } else if (errorName === "NotReadableError" || errorName === "TrackStartError") {
-          setCameraErrorMessage("Camera or microphone is already in use by another app (e.g. Zoom, FaceTime). Please close other apps and retry.");
-        } else {
-          setCameraErrorMessage("Camera access is required for video calls. Please allow camera permission in your browser settings.");
-        }
-      });
-  }, [mode]);
-
-  // Ensure local video element srcObject is bound whenever stream or cameraStatus becomes ready
+  // Ensure local video element srcObject is bound whenever localStream changes
   useEffect(() => {
-    if (cameraStatus === "ready" && localVideoRef.current && localStreamRef.current) {
-      if (localVideoRef.current.srcObject !== localStreamRef.current) {
-        localVideoRef.current.srcObject = localStreamRef.current;
+    if (localVideoRef.current) {
+      if (localStream) {
+        if (localVideoRef.current.srcObject !== localStream) {
+          localVideoRef.current.srcObject = localStream;
+        }
         localVideoRef.current.play().catch(() => {});
+      } else {
+        localVideoRef.current.srcObject = null;
       }
     }
-  }, [cameraStatus]);
+  }, [localStream]);
 
   // Ensure remote video element srcObject is bound whenever remote stream becomes active
   useEffect(() => {
     if (remoteStreamActive && remoteVideoRef.current && remoteMediaStreamRef.current) {
       if (remoteVideoRef.current.srcObject !== remoteMediaStreamRef.current) {
         remoteVideoRef.current.srcObject = remoteMediaStreamRef.current;
-        remoteVideoRef.current.play().catch(() => {});
+        remoteVideoRef.current.play().catch(() => {
+          setRemoteAutoplayBlocked(true);
+        });
       }
     }
   }, [remoteStreamActive]);
 
+  // Clean up peer connection and media on component unmount (BUG-001: emit LEAVE_QUEUE & STOP)
   useEffect(() => {
-    const timer = setTimeout(() => {
-      requestCameraAccess();
-    }, 0);
-
     return () => {
-      clearTimeout(timer);
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
-        localStreamRef.current = null;
+      try {
+        const socket = connectSocket();
+        socket.emit(SocketEvents.LEAVE_QUEUE);
+        socket.emit(SocketEvents.STOP);
+      } catch (err) {
+        console.error("[ChatRoom] Error leaving queue/match on unmount:", err);
       }
       cleanupPeerConnection(true);
+      releaseMedia();
     };
-  }, [requestCameraAccess, cleanupPeerConnection]);
+  }, [cleanupPeerConnection, releaseMedia]);
 
-  // Toggle local microphone
-  const toggleAudio = () => {
-    if (localStreamRef.current) {
-      const audioTracks = localStreamRef.current.getAudioTracks();
-      const nextState = !isAudioMuted;
-      audioTracks.forEach((track) => {
-        track.enabled = isAudioMuted;
+  // Re-acquired tracks attached to active peer connection (BUG-003)
+  useEffect(() => {
+    if (
+      chatState === ChatState.CONNECTED &&
+      peerConnectionRef.current &&
+      peerConnectionRef.current.connectionState !== "closed"
+    ) {
+      const pc = peerConnectionRef.current;
+      const videoTrack = localStream?.getVideoTracks()[0] || null;
+      const audioTrack = localStream?.getAudioTracks()[0] || null;
+
+      pc.getSenders().forEach((sender) => {
+        const transceiver = pc.getTransceivers?.().find((t) => t.sender === sender);
+        const kind = sender.track?.kind || transceiver?.receiver?.track?.kind;
+
+        if (kind === "video") {
+          if (videoTrack && sender.track !== videoTrack) {
+            sender.replaceTrack(videoTrack).catch(() => {});
+          }
+        } else if (kind === "audio") {
+          if (audioTrack && sender.track !== audioTrack) {
+            sender.replaceTrack(audioTrack).catch(() => {});
+          }
+        }
       });
-      setIsAudioMuted(nextState);
     }
-  };
+  }, [localStream, chatState]);
+
+  // Mobile background / lock video resumption (BUG-009)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        localVideoRef.current?.play().catch(() => {});
+        remoteVideoRef.current?.play().catch(() => setRemoteAutoplayBlocked(true));
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   // Fullscreen remote video
   const toggleFullscreen = () => {
@@ -387,12 +401,12 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         bundlePolicy: "max-bundle",
         iceTransportPolicy: "all",
       };
-      console.log("[WEBRTC] Initializing RTCPeerConnection (isInitiator:", isInitiator, ")");
+      debugLog("[WEBRTC] Initializing RTCPeerConnection (isInitiator:", isInitiator, ")");
       const pc = new RTCPeerConnection(pcConfig);
       peerConnectionRef.current = pc;
 
       // Ensure localStream tracks are attached
-      const stream = localStreamRef.current;
+      const stream = localStream;
       if (stream) {
         stream.getTracks().forEach((track) => {
           try {
@@ -401,18 +415,18 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             // track already added
           }
         });
-        console.log("[WEBRTC] local tracks added to peer connection:", stream.getTracks().map((t) => t.kind));
+        debugLog("[WEBRTC] local tracks added to peer connection:", stream.getTracks().map((t) => t.kind));
       } else {
         // Pre-allocate transceivers to ensure SDP negotiation succeeds
         try {
           pc.addTransceiver("video", { direction: "sendrecv" });
           pc.addTransceiver("audio", { direction: "sendrecv" });
-          console.log("[WEBRTC] Transceivers pre-allocated (sendrecv)");
+          debugLog("[WEBRTC] Transceivers pre-allocated (sendrecv)");
         } catch {}
       }
 
       pc.ontrack = (event) => {
-        console.log("[MEDIA] ontrack received:", event.track?.kind, "ID:", event.track?.id);
+        debugLog("[MEDIA] ontrack received:", event.track?.kind, "ID:", event.track?.id);
         let remoteStream = remoteMediaStreamRef.current;
         if (!remoteStream) {
           remoteStream = new MediaStream();
@@ -436,15 +450,16 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
           }
           remoteVideoRef.current.play().catch((err) => {
             console.warn("[MEDIA] Remote video playback waiting for user gesture:", err);
+            setRemoteAutoplayBlocked(true);
           });
         }
-        console.log("[MEDIA] remote stream attached. Total tracks:", remoteStream.getTracks().length);
+        debugLog("[MEDIA] remote stream attached. Total tracks:", remoteStream.getTracks().length);
         setRemoteStreamActive(true);
       };
 
       pc.onicecandidate = (event) => {
         if (event.candidate && event.candidate.candidate) {
-          console.log("[SIGNALING] ICE candidate sent:", event.candidate.candidate.substring(0, 48), "...");
+          debugLog("[SIGNALING] ICE candidate sent:", event.candidate.candidate.substring(0, 48), "...");
           socket.emit(SocketEvents.ICE_CANDIDATE, {
             matchId: currentMatchRef.current?.matchId,
             candidate: event.candidate.candidate,
@@ -454,27 +469,38 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         }
       };
 
-      pc.oniceconnectionstatechange = () => {
+      pc.oniceconnectionstatechange = async () => {
         const state = pc.iceConnectionState;
-        console.log("[ICE] iceConnectionState changed:", state);
+        debugLog("[ICE] iceConnectionState changed:", state);
         if (state === "failed") {
           console.warn("[ICE] connection state failed, restarting ICE...");
-          if (pc.restartIce) {
-            pc.restartIce();
+          try {
+            if (pc.restartIce) {
+              pc.restartIce();
+            }
+            const offer = await pc.createOffer({ iceRestart: true });
+            await pc.setLocalDescription(offer);
+            debugLog("[SIGNALING] ICE restart offer sent to partner");
+            socket.emit(SocketEvents.WEBRTC_OFFER, {
+              matchId: currentMatchRef.current?.matchId,
+              sdp: offer.sdp || "",
+            } as WebRTCOfferPayload);
+          } catch (err) {
+            console.error("[WebRTC] Error during ICE restart renegotiation:", err);
           }
         }
       };
 
       pc.onicegatheringstatechange = () => {
-        console.log("[ICE] iceGatheringState changed:", pc.iceGatheringState);
+        debugLog("[ICE] iceGatheringState changed:", pc.iceGatheringState);
       };
 
       pc.onconnectionstatechange = () => {
-        console.log("[PEER] connectionState changed:", pc.connectionState);
+        debugLog("[PEER] connectionState changed:", pc.connectionState);
       };
 
       pc.onsignalingstatechange = () => {
-        console.log("[PEER] signalingState changed:", pc.signalingState);
+        debugLog("[PEER] signalingState changed:", pc.signalingState);
       };
 
       // Check if an offer already arrived while peerConnection was being constructed
@@ -482,13 +508,13 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         const pending = pendingOfferRef.current;
         pendingOfferRef.current = null;
         try {
-          console.log("[SIGNALING] Applying buffered offer in setupPeerConnection");
+          debugLog("[SIGNALING] Applying buffered offer in setupPeerConnection");
           await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: pending.sdp }));
           await flushIceCandidates(pc);
 
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          console.log("[SIGNALING] answer sent to partner (from buffered offer)");
+          debugLog("[SIGNALING] answer sent to partner (from buffered offer)");
           socket.emit(SocketEvents.WEBRTC_ANSWER, {
             matchId: currentMatchRef.current?.matchId || pending.matchId,
             sdp: answer.sdp || "",
@@ -498,13 +524,13 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         }
       } else if (isInitiator) {
         try {
-          console.log("[SIGNALING] Creating offer as initiator");
+          debugLog("[SIGNALING] Creating offer as initiator");
           const offer = await pc.createOffer({
             offerToReceiveAudio: true,
             offerToReceiveVideo: true,
           });
           await pc.setLocalDescription(offer);
-          console.log("[SIGNALING] offer sent to partner");
+          debugLog("[SIGNALING] offer sent to partner");
           socket.emit(SocketEvents.WEBRTC_OFFER, {
             matchId: currentMatchRef.current?.matchId,
             sdp: offer.sdp || "",
@@ -514,20 +540,28 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         }
       }
     },
-    [mode, cleanupPeerConnection, flushIceCandidates]
+    [mode, localStream, cleanupPeerConnection, flushIceCandidates]
   );
 
-  // Start chat - join matchmaking queue
-  const startChat = useCallback(() => {
+  // Start chat - join matchmaking queue only after media is guaranteed ready
+  const startChat = useCallback(async () => {
     const now = Date.now();
     if (now - lastActionTimeRef.current < 400) {
       return;
     }
     lastActionTimeRef.current = now;
 
-    if (mode === "video" && (!localStreamRef.current || cameraStatus !== "ready")) {
-      requestCameraAccess();
+    if (mode === "video") {
+      let activeStream = localStream;
+      if (!activeStream || mediaStatus !== "ready") {
+        activeStream = await acquireMedia({ userInitiated: true });
+        if (!activeStream) {
+          // Permissions denied or device error: stay in recoverable error state
+          return;
+        }
+      }
     }
+
     cleanupPeerConnection(true);
     currentMatchRef.current = null;
     setCurrentMatch(null);
@@ -537,13 +571,14 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
     const socket = connectSocket();
 
+    const activeInterests = interestsRef.current;
     setMessages([
       {
         id: createUniqueId("sys"),
         sender: "system",
         text:
-          interests.length > 0
-            ? `Searching for strangers interested in: #${interests.join(", #")}...`
+          activeInterests.length > 0
+            ? `Searching for strangers interested in: #${activeInterests.join(", #")}...`
             : "Looking for someone to chat with worldwide...",
         time: new Date().toLocaleTimeString([], {
           hour: "2-digit",
@@ -554,17 +589,22 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
     socket.emit(SocketEvents.JOIN_QUEUE, {
       mode,
-      interests,
+      interests: activeInterests,
     });
-  }, [mode, interests, cameraStatus, requestCameraAccess, cleanupPeerConnection]);
+  }, [mode, localStream, mediaStatus, acquireMedia, cleanupPeerConnection]);
 
-  // Next stranger
-  const handleNext = useCallback(() => {
+  // Next stranger - reuses existing local camera stream without re-prompting
+  const handleNext = useCallback(async () => {
     const now = Date.now();
     if (now - lastActionTimeRef.current < 400) {
       return;
     }
     lastActionTimeRef.current = now;
+
+    if (mode === "video" && (!localStream || mediaStatus !== "ready")) {
+      const activeStream = await acquireMedia({ userInitiated: true });
+      if (!activeStream) return;
+    }
 
     cleanupPeerConnection(true);
     const socket = connectSocket();
@@ -575,13 +615,14 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     setCurrentMatch(null);
     setChatState(ChatState.SEARCHING);
 
+    const activeInterests = interestsRef.current;
     setMessages([
       {
         id: createUniqueId("sys"),
         sender: "system",
         text:
-          interests.length > 0
-            ? `Searching for strangers interested in: #${interests.join(", #")}...`
+          activeInterests.length > 0
+            ? `Searching for strangers interested in: #${activeInterests.join(", #")}...`
             : "Looking for someone to chat with worldwide...",
         time: new Date().toLocaleTimeString([], {
           hour: "2-digit",
@@ -592,11 +633,11 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
     socket.emit(SocketEvents.JOIN_QUEUE, {
       mode,
-      interests,
+      interests: activeInterests,
     });
-  }, [cleanupPeerConnection, mode, interests]);
+  }, [cleanupPeerConnection, mode, localStream, mediaStatus, acquireMedia]);
 
-  // Stop chat
+  // Stop chat - keeps local preview active so user can re-engage seamlessly
   const handleStop = useCallback(() => {
     if (!stopConfirm && chatState === ChatState.CONNECTED) {
       setStopConfirm(true);
@@ -640,18 +681,57 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       }
 
       if (autoStart && !hasAutoStartedRef.current) {
-        hasAutoStartedRef.current = true;
-        socket.emit(SocketEvents.JOIN_QUEUE, {
-          mode,
-          interests,
-        });
+        if (mode === "text") {
+          hasAutoStartedRef.current = true;
+          socket.emit(SocketEvents.JOIN_QUEUE, {
+            mode,
+            interests: interestsRef.current,
+          });
+        } else if (mode === "video") {
+          // In video mode: check if permissions were already granted previously
+          checkPermissionState().then((perm) => {
+            if (unmounted) return;
+            if (perm === "granted") {
+              acquireMedia().then((stream) => {
+                if (unmounted) return;
+                if (stream && !hasAutoStartedRef.current) {
+                  hasAutoStartedRef.current = true;
+                  setChatState(ChatState.SEARCHING);
+                  const activeInterests = interestsRef.current;
+                  setMessages([
+                    {
+                      id: createUniqueId("sys"),
+                      sender: "system",
+                      text:
+                        activeInterests.length > 0
+                          ? `Searching for strangers interested in: #${activeInterests.join(", #")}...`
+                          : "Looking for someone to chat with worldwide...",
+                      time: new Date().toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }),
+                    },
+                  ]);
+                  const s = connectSocket();
+                  s.emit(SocketEvents.JOIN_QUEUE, {
+                    mode,
+                    interests: activeInterests,
+                  });
+                }
+              });
+            } else {
+              // Permission is 'prompt' or ungranted: keep in IDLE with prominent prompt
+              setChatState(ChatState.IDLE);
+            }
+          });
+        }
       }
     });
 
     return () => {
       unmounted = true;
     };
-  }, [mode, autoStart, interests]);
+  }, [mode, autoStart, checkPermissionState, acquireMedia]);
 
   // 2. Handle Socket.IO events (including session continuity & graceful reconnect)
   useEffect(() => {
@@ -764,6 +844,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       partnerId: string;
       isInitiator: boolean;
       sharedInterest: string | null;
+      sharedInterests?: string[];
     }) => {
       setPeerReconnecting(false);
       const matchInfo: MatchInfo = {
@@ -774,11 +855,16 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
       currentMatchRef.current = matchInfo;
       setCurrentMatch(matchInfo);
-      setSharedInterest(payload.sharedInterest);
+      const primaryShared = payload.sharedInterest || (payload.sharedInterests && payload.sharedInterests[0]) || null;
+      setSharedInterest(primaryShared);
       setChatState(ChatState.CONNECTED);
 
-      const sysText = payload.sharedInterest
-        ? `You both like #${payload.sharedInterest}! Say hello to your stranger.`
+      const allShared = payload.sharedInterests && payload.sharedInterests.length > 0
+        ? payload.sharedInterests
+        : primaryShared ? [primaryShared] : [];
+
+      const sysText = allShared.length > 0
+        ? `You both like #${allShared.join(", #")}! Say hello to your stranger.`
         : "You are now connected with a random stranger. Say hi!";
 
       setMessages((prev) => [
@@ -816,10 +902,10 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
     const handleWebRTCOffer = async (payload: WebRTCOfferPayload) => {
       if (mode !== "video") return;
-      console.log("[SIGNALING] offer received from partner");
+      debugLog("[SIGNALING] offer received from partner");
       const pc = peerConnectionRef.current;
       if (!pc) {
-        console.log("[SIGNALING] peerConnection not ready yet, queuing incoming offer");
+        debugLog("[SIGNALING] peerConnection not ready yet, queuing incoming offer");
         pendingOfferRef.current = payload;
         return;
       }
@@ -836,8 +922,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         await flushIceCandidates(pc);
 
         // Ensure local stream tracks are attached to sender transceivers if ready
-        if (localStreamRef.current) {
-          const stream = localStreamRef.current;
+        if (localStream) {
+          const stream = localStream;
           const videoTrack = stream.getVideoTracks()[0];
           const audioTrack = stream.getAudioTracks()[0];
           const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
@@ -868,7 +954,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        console.log("[SIGNALING] answer sent to partner");
+        debugLog("[SIGNALING] answer sent to partner");
         socket.emit(SocketEvents.WEBRTC_ANSWER, {
           matchId: currentMatchRef.current?.matchId || payload.matchId,
           sdp: answer.sdp || "",
@@ -880,7 +966,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
     const handleWebRTCAnswer = async (payload: WebRTCAnswerPayload) => {
       if (mode !== "video") return;
-      console.log("[SIGNALING] answer received from partner");
+      debugLog("[SIGNALING] answer received from partner");
       const pc = peerConnectionRef.current;
       if (!pc) return;
       try {
@@ -889,7 +975,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             new RTCSessionDescription({ type: "answer", sdp: payload.sdp })
           );
           await flushIceCandidates(pc);
-          console.log("[SIGNALING] Remote answer description set successfully");
+          debugLog("[SIGNALING] Remote answer description set successfully");
         }
       } catch (err) {
         console.error("[WebRTC] Error handling answer:", err);
@@ -899,7 +985,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     const handleICECandidate = async (payload: ICECandidatePayload) => {
       if (mode !== "video") return;
       if (!payload?.candidate) return;
-      console.log("[SIGNALING] ICE candidate received:", payload.candidate.substring(0, 48), "...");
+      debugLog("[SIGNALING] ICE candidate received:", payload.candidate.substring(0, 48), "...");
 
       const candidateInit: RTCIceCandidateInit = {
         candidate: payload.candidate,
@@ -908,12 +994,12 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       };
       const pc = peerConnectionRef.current;
       if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
-        console.log("[ICE] Remote description not set yet, queuing candidate");
+        debugLog("[ICE] Remote description not set yet, queuing candidate");
         iceCandidateQueueRef.current.push(candidateInit);
       } else {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidateInit));
-          console.log("[ICE] Candidate applied to peer connection");
+          debugLog("[ICE] Candidate applied to peer connection");
         } catch (err) {
           console.warn("[ICE] Handled error adding candidate:", err);
         }
@@ -993,7 +1079,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       socket.off(SocketEvents.MATCH_ENDED, handleMatchEnded);
       socket.off(SocketEvents.PARTNER_DISCONNECTED, handleMatchEnded);
     };
-  }, [mode, cleanupPeerConnection, setupPeerConnection, flushIceCandidates]);
+  }, [mode, localStream, cleanupPeerConnection, setupPeerConnection, flushIceCandidates]);
 
   // Keyboard shortcut: ESC skips/stops/starts, or dismisses open modals
   useEffect(() => {
@@ -1039,56 +1125,56 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   }, [messages]);
 
   // Send message
-  const sendMessage = (e?: React.FormEvent, customText?: string) => {
-    e?.preventDefault();
-    const text = (customText ?? inputMessage).trim();
-    if (!text || chatState !== ChatState.CONNECTED) return;
-    if (text.length > 500) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: createUniqueId("sys-err"),
-          sender: "system",
-          text: "⚠️ Message exceeds maximum length of 500 characters.",
-          time: new Date().toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-        },
-      ]);
-      return;
-    }
+  const sendMessage = useCallback(
+    (e?: React.FormEvent, customText?: string) => {
+      e?.preventDefault();
+      const text = (customText ?? inputMessage).trim();
+      if (!text || chatState !== ChatState.CONNECTED) return;
+      const now = Date.now();
+      if (now - lastSendTimeRef.current < 150) return;
+      lastSendTimeRef.current = now;
+      if (text.length > 500) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: createUniqueId("sys-err"),
+            sender: "system",
+            text: "⚠️ Message exceeds maximum length of 500 characters.",
+            time: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          },
+        ]);
+        return;
+      }
 
-    const socket = connectSocket();
-    const newMsg: Message = {
-      id: createUniqueId("msg"),
-      sender: "you",
-      text,
-      time: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    };
+      const socket = connectSocket();
+      const newMsg: Message = {
+        id: createUniqueId("msg"),
+        sender: "you",
+        text,
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      };
 
-    setMessages((prev) => [...prev, newMsg]);
-    if (!customText) setInputMessage("");
+      setMessages((prev) => [...prev, newMsg]);
+      if (!customText) setInputMessage("");
 
-    socket.emit(SocketEvents.SEND_MESSAGE, { content: text });
-  };
+      socket.emit(SocketEvents.SEND_MESSAGE, { content: text });
+    },
+    [inputMessage, chatState]
+  );
 
   // Submit report
-  const submitReport = async () => {
+  const submitReport = () => {
     setReportSubmitted(true);
     const socket = connectSocket();
 
     socket.emit(SocketEvents.REPORT_USER, {
       reason: selectedReportReason,
-    });
-
-    await submitReportApi({
-      reason: selectedReportReason,
-      matchId: currentMatch?.matchId,
-      reportedUserId: currentMatch?.partnerId,
     });
 
     setTimeout(() => {
@@ -1098,53 +1184,105 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     }, 1000);
   };
 
+  const syncQueueInterests = useCallback(
+    (newInterests: string[]) => {
+      if (chatState === ChatState.SEARCHING) {
+        const socket = connectSocket();
+        socket.emit(SocketEvents.JOIN_QUEUE, {
+          mode,
+          interests: newInterests,
+        });
+        setMessages([
+          {
+            id: createUniqueId("sys"),
+            sender: "system",
+            text:
+              newInterests.length > 0
+                ? `Searching for strangers interested in: #${newInterests.join(", #")}...`
+                : "Looking for someone to chat with worldwide...",
+            time: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          },
+        ]);
+      }
+    },
+    [chatState, mode]
+  );
+
   const handleAddInterest = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = interestInput.trim().toLowerCase().replace(/^#/, "");
-    if (trimmed && !interests.includes(trimmed)) {
-      setInterests([...interests, trimmed]);
+    if (!interestInput.trim()) return;
+    const newTags = parseAndNormalizeInterests(interestInput);
+    if (newTags.length > 0) {
+      const updated = Array.from(new Set([...interests, ...newTags])).slice(0, 10);
+      setInterests(updated);
       setInterestInput("");
+      syncQueueInterests(updated);
     }
   };
 
   const handleRemoveInterest = (tag: string) => {
-    setInterests(interests.filter((t) => t !== tag));
+    const updated = interests.filter((t) => t !== tag);
+    setInterests(updated);
+    syncQueueInterests(updated);
+  };
+
+  const handleToggleInterest = (tag: string) => {
+    if (interests.includes(tag)) {
+      handleRemoveInterest(tag);
+    } else {
+      const updated = Array.from(new Set([...interests, tag])).slice(0, 10);
+      setInterests(updated);
+      syncQueueInterests(updated);
+    }
+  };
+
+  const handleClearAllInterests = () => {
+    setInterests([]);
+    syncQueueInterests([]);
   };
 
   return (
-    <div className="flex h-screen h-dvh w-full flex-col overflow-hidden bg-[#fdfbf7] dark:bg-[#121016] text-[#111827] dark:text-[#f4f4f7]">
-      {/* Universal Header */}
-      <Header />
+    <div
+      style={{ height: viewportHeight ? `${viewportHeight}px` : undefined }}
+      className="flex h-screen h-dvh max-h-screen max-h-dvh w-full flex-col overflow-hidden bg-[#fdfbf7] dark:bg-[#121016] text-[#111827] dark:text-[#f4f4f7] select-none"
+    >
+      {/* Universal Header (hidden on mobile when virtual keyboard is open) */}
+      <div className={isKeyboardOpen ? "hidden md:block" : "shrink-0"}>
+        <Header />
+      </div>
 
       {/* Main Page Layout Container */}
-      <main className="flex-1 min-h-0 min-w-0 w-full flex flex-col px-2.5 sm:px-3.5 lg:px-4 pt-1 pb-2.5 sm:pb-3 overflow-hidden">
-        <div className="flex flex-1 min-h-0 min-w-0 w-full flex-col md:flex-row gap-2 sm:gap-2.5 lg:gap-3 overflow-hidden">
+      <main className="flex-1 min-h-0 min-w-0 w-full flex flex-col px-2 sm:px-3 lg:px-4 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pl-[max(0.5rem,env(safe-area-inset-left,0px))] pr-[max(0.5rem,env(safe-area-inset-right,0px))] overflow-hidden">
+        <div className="flex flex-1 min-h-0 min-w-0 w-full flex-col md:flex-row mobile-landscape:flex-row gap-1.5 sm:gap-2.5 lg:gap-3 overflow-hidden">
           
           {/* ================================================================= */}
           {/* LEFT COLUMN: Dual Video Feeds (Desktop & Mobile Optimized)       */}
           {/* ================================================================= */}
           {mode === "video" && (
-            <div className="shrink-0 flex flex-col w-full md:w-[380px] lg:w-[430px] xl:w-[480px] 2xl:w-[520px] md:h-full gap-2 sm:gap-2.5 overflow-hidden">
+            <div className="shrink-0 flex flex-col w-full md:w-[380px] lg:w-[430px] xl:w-[480px] 2xl:w-[520px] mobile-landscape:w-[48%] mobile-landscape:h-full md:h-full gap-1 sm:gap-2 overflow-hidden">
               
-              {/* Mobile View Toggle Bar (Only visible on small screens < md) */}
-              <div className="flex md:hidden items-center justify-between px-1">
-                <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+              {/* Mobile View Toggle Bar (Only visible on small portrait screens < md) */}
+              <div className="flex md:hidden mobile-landscape:hidden items-center justify-between px-1 shrink-0 h-6 min-h-[24px]">
+                <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
                   <span className={`h-2 w-2 rounded-full ${chatState === ChatState.CONNECTED ? "bg-green-500 animate-pulse" : "bg-gray-400"}`} />
-                  {chatState === ChatState.CONNECTED ? "Connected" : chatState === ChatState.SEARCHING ? "Searching..." : "Video Preview"}
+                  {chatState === ChatState.CONNECTED ? "Connected" : chatState === ChatState.SEARCHING ? "Searching..." : "Preview"}
                 </span>
 
-                <div className="flex items-center gap-1 bg-amber-100/70 dark:bg-white/10 rounded-lg p-0.5 text-[11px] font-medium border border-amber-200/50 dark:border-white/5">
+                <div className="flex items-center gap-0.5 bg-amber-100/70 dark:bg-white/10 rounded-lg p-0.5 text-[10px] font-medium border border-amber-200/50 dark:border-white/5">
                   <button
                     type="button"
                     onClick={() => setMobileViewMode("pip")}
-                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${mobileViewMode === "pip" ? "bg-white dark:bg-[#1a1827] text-[#f43f5e] dark:text-[#fb7185] font-bold shadow-xs" : "text-gray-600 dark:text-gray-400"}`}
+                    className={`px-1.5 py-0.5 rounded-md transition-all cursor-pointer ${mobileViewMode === "pip" ? "bg-white dark:bg-[#1a1827] text-[#f43f5e] dark:text-[#fb7185] font-bold shadow-xs" : "text-gray-600 dark:text-gray-400"}`}
                   >
                     PiP View
                   </button>
                   <button
                     type="button"
                     onClick={() => setMobileViewMode("split")}
-                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${mobileViewMode === "split" ? "bg-white dark:bg-[#1a1827] text-[#f43f5e] dark:text-[#fb7185] font-bold shadow-xs" : "text-gray-600 dark:text-gray-400"}`}
+                    className={`px-1.5 py-0.5 rounded-md transition-all cursor-pointer ${mobileViewMode === "split" ? "bg-white dark:bg-[#1a1827] text-[#f43f5e] dark:text-[#fb7185] font-bold shadow-xs" : "text-gray-600 dark:text-gray-400"}`}
                   >
                     Split View
                   </button>
@@ -1153,10 +1291,14 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
               {/* Video Feeds Wrapper */}
               <div
-                className={`w-full overflow-hidden transition-all ${
+                className={`w-full overflow-hidden transition-all duration-200 ${
                   mobileViewMode === "pip"
-                    ? "relative h-[180px] min-[400px]:h-[210px] sm:h-[250px] md:h-full md:flex md:flex-col md:gap-2.5"
-                    : "grid grid-cols-2 gap-2 h-[145px] min-[400px]:h-[170px] sm:h-[200px] md:h-full md:flex md:flex-col md:gap-2.5"
+                    ? isKeyboardOpen
+                      ? "relative h-[85px] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
+                      : "relative h-[clamp(130px,23dvh,195px)] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
+                    : isKeyboardOpen
+                    ? "grid grid-cols-2 gap-1.5 h-[80px] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
+                    : "grid grid-cols-2 gap-1.5 sm:gap-2 h-[clamp(115px,20dvh,175px)] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
                 }`}
               >
                 {/* 1. STRANGER / REMOTE VIDEO CARD */}
@@ -1193,6 +1335,30 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                         : "opacity-0 z-0"
                     }`}
                   />
+
+                  {/* Remote Video Autoplay Blocked Overlay (Mobile Safari & Android WebKit) */}
+                  {remoteAutoplayBlocked && chatState === ChatState.CONNECTED && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (remoteVideoRef.current) {
+                          remoteVideoRef.current
+                            .play()
+                            .then(() => setRemoteAutoplayBlocked(false))
+                            .catch(() => {});
+                        }
+                      }}
+                      className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/75 backdrop-blur-xs text-white p-4 text-center cursor-pointer select-none"
+                    >
+                      <div className="flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 text-white shadow-xl mb-2 animate-bounce">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                          <polygon points="5 3 19 12 5 21 5 3" />
+                        </svg>
+                      </div>
+                      <span className="text-xs sm:text-sm font-extrabold text-white">Tap to Play Video &amp; Audio</span>
+                      <span className="text-[10px] text-gray-300 mt-0.5">Your browser requires a tap to start sound</span>
+                    </button>
+                  )}
 
                   {/* Remote State: IDLE - Clean charcoal canvas matching reference image */}
 
@@ -1286,9 +1452,12 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                   {/* BOTTOM-LEFT WATERMARK: V Mingle Branding */}
                   <div className="absolute bottom-2.5 left-2.5 sm:bottom-3 sm:left-3 flex items-center gap-1.5 select-none pointer-events-none z-20">
                     <div className="flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center rounded-md bg-white p-0.5 shadow-xs overflow-hidden">
-                      <img
+                      <Image
                         src="/favicon.png"
                         alt="V Mingle"
+                        width={20}
+                        height={20}
+                        unoptimized
                         className="h-full w-full object-contain"
                       />
                     </div>
@@ -1298,21 +1467,21 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                   </div>
 
                   {/* TOP-RIGHT CONTROLS: Fullscreen */}
-                  <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 flex items-center gap-1.5 z-20">
+                  <div className="absolute top-2 right-2 sm:top-3 sm:right-3 flex items-center gap-1.5 z-20">
                     <button
                       onClick={toggleFullscreen}
                       type="button"
-                      className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 backdrop-blur-md text-gray-300 hover:text-white hover:bg-black/80 transition-colors cursor-pointer border border-white/10"
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-black/60 backdrop-blur-md text-gray-300 hover:text-white hover:bg-black/80 transition-colors cursor-pointer border border-white/10"
                       title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
                       aria-label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
                       id="fullscreen-toggle-btn"
                     >
                       {isFullscreen ? (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
                         </svg>
                       ) : (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
                         </svg>
                       )}
@@ -1323,7 +1492,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                   <button
                     onClick={() => setShowReportModal(true)}
                     type="button"
-                    className="absolute bottom-2.5 right-2.5 sm:bottom-3 sm:right-3 flex h-6 w-6 items-center justify-center text-gray-400 hover:text-white transition-colors cursor-pointer z-20"
+                    className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 flex h-8 w-8 items-center justify-center text-gray-400 hover:text-white transition-colors cursor-pointer z-20"
                     title="Report user"
                     aria-label="Report user"
                     id="report-flag-btn"
@@ -1337,10 +1506,12 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
                 {/* 2. LOCAL SELF VIDEO CARD (Picture-in-Picture on mobile or stacked on desktop) */}
                 <div
-                  className={`group overflow-hidden rounded-2xl sm:rounded-3xl border border-gray-200/90 dark:border-white/10 bg-[#12111a] flex items-center justify-center shadow-2xs select-none transition-all ${
+                  className={`group overflow-hidden rounded-xl sm:rounded-3xl border border-gray-200/90 dark:border-white/10 bg-[#12111a] flex items-center justify-center shadow-2xs select-none transition-all ${
                     mobileViewMode === "pip"
-                      ? "absolute bottom-2 right-2 w-24 h-32 min-[400px]:w-28 min-[400px]:h-36 sm:w-32 sm:h-40 rounded-xl z-30 shadow-xl ring-2 ring-black/50 md:relative md:bottom-auto md:right-auto md:w-full md:h-auto md:flex-1 md:basis-0 md:min-h-0 md:rounded-2xl sm:md:rounded-3xl md:ring-0"
-                      : "relative w-full h-full md:h-auto md:flex-1 md:basis-0 min-h-0 rounded-2xl sm:rounded-3xl"
+                      ? isKeyboardOpen
+                        ? "absolute bottom-1 right-1 w-16 h-20 rounded-lg z-30 shadow-xl ring-2 ring-black/50 md:relative md:bottom-auto md:right-auto md:w-full md:h-auto md:flex-1 md:basis-0 md:min-h-0 md:rounded-2xl sm:md:rounded-3xl md:ring-0"
+                        : "absolute bottom-1.5 right-1.5 w-20 h-28 min-[380px]:w-24 min-[380px]:h-32 sm:w-28 sm:h-36 rounded-xl z-30 shadow-xl ring-2 ring-black/50 md:relative md:bottom-auto md:right-auto md:w-full md:h-auto md:flex-1 md:basis-0 md:min-h-0 md:rounded-2xl sm:md:rounded-3xl md:ring-0"
+                      : "relative w-full h-full md:h-auto md:flex-1 md:basis-0 min-h-0 rounded-xl sm:rounded-3xl"
                   }`}
                 >
                   {/* Mirrored Local Video Element */}
@@ -1354,44 +1525,118 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     }`}
                   />
 
-                  {/* Camera Permission State: Insecure Context (HTTP across insecure origin) */}
-                  {cameraStatus === "insecure_context" && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-30">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20 text-amber-400 mb-1.5">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  {/* Audio-only or Video-only Hardware Indicator Badge */}
+                  {audioOnly && mediaStatus === "ready" && (
+                    <div className="absolute top-1.5 left-1.5 z-20 flex items-center gap-1 rounded-md bg-amber-500/90 px-1.5 py-0.5 text-[8px] sm:text-[9px] font-bold text-white shadow-xs backdrop-blur-xs">
+                      <span>🎙️</span>
+                      <span>Audio Only</span>
+                    </div>
+                  )}
+                  {videoOnly && mediaStatus === "ready" && (
+                    <div className="absolute top-1.5 left-1.5 z-20 flex items-center gap-1 rounded-md bg-amber-500/90 px-1.5 py-0.5 text-[8px] sm:text-[9px] font-bold text-white shadow-xs backdrop-blur-xs">
+                      <span>📹</span>
+                      <span>Video Only (No Mic)</span>
+                    </div>
+                  )}
+
+                  {/* Camera Paused / Turned Off State */}
+                  {isVideoMuted && mediaStatus === "ready" && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-25">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-gray-300 mb-1">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                          <path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34" />
                         </svg>
                       </div>
-                      <span className="text-[11px] sm:text-xs font-bold text-white mb-1">HTTPS Required for Camera</span>
-                      <p className="text-[9px] sm:text-[10px] text-amber-200/90 max-w-[210px] leading-tight mb-2">
-                        Browsers block camera &amp; mic over insecure HTTP on other devices. Please connect via HTTPS or a secure tunnel (e.g. Cloudflare / ngrok).
-                      </p>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-white">Camera is Off</span>
                       <button
-                        onClick={requestCameraAccess}
+                        onClick={() => toggleVideo(false)}
                         type="button"
-                        className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-[9px] sm:text-[10px] font-bold text-white cursor-pointer shadow-xs"
+                        className="mt-1 px-2.5 py-0.5 rounded-full bg-white/20 hover:bg-white/30 text-[9px] font-semibold text-white cursor-pointer"
                       >
-                        Retry Permission
+                        Turn On
                       </button>
                     </div>
                   )}
 
-                  {/* Camera Permission State: Denied or Not Working */}
-                  {cameraStatus === "denied" && (
+                  {/* Media Permission State: Requesting (User prompt pending) */}
+                  {mediaStatus === "requesting" && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-30">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/20 text-red-400 mb-1.5">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-500/20 text-rose-400 mb-1.5 animate-pulse">
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                        </svg>
+                      </div>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-white mb-0.5">Requesting Access...</span>
+                      <p className="text-[9px] text-gray-300 max-w-[200px] leading-tight">
+                        Please tap &ldquo;Allow&rdquo; on your browser prompt to connect your camera &amp; microphone.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Media State: Prompt Required (User has not clicked to start yet) */}
+                  {mediaStatus === "prompt" && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-30">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 text-white mb-1 shadow-xs">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M23 7l-7 5 7 5V7z" />
+                          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                        </svg>
+                      </div>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-white mb-0.5">Camera Required</span>
+                      <p className="text-[9px] text-gray-400 max-w-[190px] leading-tight mb-2">
+                        Click Enable Camera or Start to begin.
+                      </p>
+                      <button
+                        onClick={() => acquireMedia({ userInitiated: true })}
+                        type="button"
+                        className="px-2.5 py-1 rounded-full bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-[9px] sm:text-[10px] font-bold text-white cursor-pointer shadow-xs"
+                      >
+                        Enable Camera
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Media Permission State: Denied */}
+                  {mediaStatus === "denied" && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-30">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/20 text-red-400 mb-1">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <line x1="1" y1="1" x2="23" y2="23" />
                           <path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34" />
                         </svg>
                       </div>
-                      <span className="text-[10px] sm:text-[11px] font-bold text-gray-200 mb-1">Camera Permission Needed</span>
-                      <p className="text-[9px] text-gray-400 max-w-[200px] leading-tight mb-2">
-                        {cameraErrorMessage || "Camera is required for video calls. Allow camera in your browser settings and click Retry."}
+                      <span className="text-[10px] sm:text-[11px] font-bold text-gray-200 mb-0.5">Permission Denied</span>
+                      <p className="text-[9px] text-gray-400 max-w-[210px] leading-tight mb-2">
+                        {mediaErrorMessage || "Camera permission is denied. Click the lock/camera icon in your address bar to allow permissions, then retry."}
                       </p>
                       <button
-                        onClick={requestCameraAccess}
+                        onClick={() => acquireMedia({ userInitiated: true })}
+                        type="button"
+                        className="px-2.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[9px] font-semibold text-white cursor-pointer"
+                      >
+                        Check &amp; Retry
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Media State: Device Not Found */}
+                  {mediaStatus === "not_found" && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-30">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20 text-amber-400 mb-1">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10" />
+                          <line x1="12" y1="8" x2="12" y2="12" />
+                          <line x1="12" y1="16" x2="12.01" y2="16" />
+                        </svg>
+                      </div>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-white mb-0.5">No Device Found</span>
+                      <p className="text-[9px] text-amber-200/90 max-w-[200px] leading-tight mb-2">
+                        {mediaErrorMessage || "No camera or microphone found on this device."}
+                      </p>
+                      <button
+                        onClick={() => acquireMedia({ userInitiated: true })}
                         type="button"
                         className="px-2.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[9px] font-semibold text-white cursor-pointer"
                       >
@@ -1400,22 +1645,120 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     </div>
                   )}
 
-                  {/* Subtle Floating Local Media Controls Toolbar (Always visible on mobile/touch, revealed on hover on desktop: Voice & Flip) */}
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 border border-white/10 shadow-lg opacity-90 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 z-30">
+                  {/* Media State: Device Busy / In Use in Another App */}
+                  {mediaStatus === "not_readable" && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-30">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20 text-amber-400 mb-1">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                          <line x1="7" y1="2" x2="7" y2="22" />
+                          <line x1="17" y1="2" x2="17" y2="22" />
+                        </svg>
+                      </div>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-white mb-0.5">Camera Busy</span>
+                      <p className="text-[9px] text-amber-200/90 max-w-[200px] leading-tight mb-2">
+                        {mediaErrorMessage || "Camera is in use by another app (Zoom, FaceTime). Close other apps and retry."}
+                      </p>
+                      <button
+                        onClick={() => acquireMedia({ userInitiated: true })}
+                        type="button"
+                        className="px-2.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[9px] font-semibold text-white cursor-pointer"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Media State: Insecure Context (HTTP) */}
+                  {mediaStatus === "insecure_context" && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-30">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20 text-amber-400 mb-1">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                        </svg>
+                      </div>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-white mb-0.5">HTTPS Required</span>
+                      <p className="text-[9px] text-amber-200/90 max-w-[210px] leading-tight mb-2">
+                        Browsers block camera &amp; mic over insecure HTTP. Please connect via HTTPS.
+                      </p>
+                      <button
+                        onClick={() => acquireMedia({ userInitiated: true })}
+                        type="button"
+                        className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-[9px] font-bold text-white cursor-pointer shadow-xs"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Media State: Device Error / Interrupted */}
+                  {mediaStatus === "device_error" && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#15141c]/95 p-3 text-center z-30">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/20 text-red-400 mb-1">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="12 2 2 22 22 22" />
+                          <line x1="12" y1="9" x2="12" y2="13" />
+                          <line x1="12" y1="17" x2="12.01" y2="17" />
+                        </svg>
+                      </div>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-white mb-0.5">Device Interrupted</span>
+                      <p className="text-[9px] text-gray-400 max-w-[200px] leading-tight mb-2">
+                        {mediaErrorMessage || "Device access was interrupted. Click Retry to reconnect."}
+                      </p>
+                      <button
+                        onClick={() => acquireMedia({ userInitiated: true })}
+                        type="button"
+                        className="px-2.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[9px] font-semibold text-white cursor-pointer"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Subtle Floating Local Media Controls Toolbar (Camera, Voice & Flip/Switch) */}
+                  <div className={`absolute bottom-1.5 left-1/2 -translate-x-1/2 ${isKeyboardOpen ? "hidden md:flex" : "flex"} items-center gap-1 rounded-full bg-black/70 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 border border-white/10 shadow-lg opacity-90 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 z-30`}>
+                    {/* Camera Button (Toggle Video Track) */}
+                    <button
+                      onClick={() => toggleVideo()}
+                      type="button"
+                      className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors cursor-pointer ${
+                        isVideoMuted
+                          ? "bg-red-500 text-white"
+                          : "text-gray-300 hover:text-white hover:bg-white/20"
+                      }`}
+                      title={isVideoMuted ? "Turn Camera On" : "Turn Camera Off"}
+                      aria-label={isVideoMuted ? "Turn Camera On" : "Turn Camera Off"}
+                      id="toggle-camera-btn"
+                    >
+                      {isVideoMuted ? (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                          <path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34" />
+                        </svg>
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M23 7l-7 5 7 5V7z" />
+                          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                        </svg>
+                      )}
+                    </button>
+
                     {/* Voice Button (Toggle Microphone) */}
                     <button
-                      onClick={toggleAudio}
+                      onClick={() => toggleAudio()}
                       type="button"
-                      className={`flex h-6 w-6 items-center justify-center rounded-full transition-colors cursor-pointer ${
+                      className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors cursor-pointer ${
                         isAudioMuted
                           ? "bg-red-500 text-white"
                           : "text-gray-300 hover:text-white hover:bg-white/20"
                       }`}
-                      title="Voice"
-                      aria-label="Voice"
+                      title={isAudioMuted ? "Unmute Microphone" : "Mute Microphone"}
+                      aria-label={isAudioMuted ? "Unmute Microphone" : "Mute Microphone"}
+                      id="toggle-audio-btn"
                     >
                       {isAudioMuted ? (
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <line x1="1" y1="1" x2="23" y2="23" />
                           <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
                           <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
@@ -1423,7 +1766,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                           <line x1="8" y1="23" x2="16" y2="23" />
                         </svg>
                       ) : (
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
                           <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                           <line x1="12" y1="19" x2="12" y2="23" />
@@ -1432,15 +1775,32 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                       )}
                     </button>
 
-                    {/* Flip Button */}
+                    {/* Flip / Switch Camera Button */}
                     <button
-                      onClick={() => setIsMirrored(!isMirrored)}
+                      onClick={async () => {
+                        if (deviceInfo.hasMultipleCameras) {
+                          await switchCamera(async (newTrack) => {
+                            const pc = peerConnectionRef.current;
+                            if (pc && pc.connectionState !== "closed") {
+                              const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+                              for (const t of transceivers) {
+                                if (t.sender.track?.kind === "video") {
+                                  await t.sender.replaceTrack(newTrack).catch(() => {});
+                                }
+                              }
+                            }
+                          });
+                        } else {
+                          setIsMirrored(!isMirrored);
+                        }
+                      }}
                       type="button"
-                      className="flex h-6 w-6 items-center justify-center rounded-full text-gray-300 hover:text-white hover:bg-white/20 transition-colors cursor-pointer"
-                      title="Flip"
-                      aria-label="Flip"
+                      className="flex h-7 w-7 items-center justify-center rounded-full text-gray-300 hover:text-white hover:bg-white/20 transition-colors cursor-pointer"
+                      title={deviceInfo.hasMultipleCameras ? "Switch Camera (Front/Back)" : "Flip Video Mirror"}
+                      aria-label={deviceInfo.hasMultipleCameras ? "Switch Camera" : "Flip Mirror"}
+                      id="flip-camera-btn"
                     >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="17 1 21 5 17 9" />
                         <path d="M3 11V9a4 4 0 0 1 4-4h14" />
                         <polyline points="7 23 3 19 7 15" />
@@ -1457,10 +1817,10 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
           {/* ================================================================= */}
           {/* RIGHT COLUMN: Chat Stream, Guidelines, & Bottom Action Bar       */}
           {/* ================================================================= */}
-          <div className="flex flex-1 min-w-0 min-h-0 flex-col gap-2.5 sm:gap-3 h-full overflow-hidden">
+          <div className="flex flex-1 min-w-0 min-h-0 flex-col gap-1.5 sm:gap-2.5 lg:gap-3 md:h-full mobile-landscape:h-full overflow-hidden">
             
             {/* Main Content Pane (Welcome Rules Card OR Live Chat Messages) */}
-            <div className="relative flex-1 min-h-0 overflow-y-auto rounded-2xl sm:rounded-3xl border border-gray-200/90 bg-white p-6 sm:p-8 lg:p-10 shadow-2xs dark:border-white/10 dark:bg-[#151421]">
+            <div className="relative flex-1 min-h-0 overflow-y-auto rounded-xl sm:rounded-3xl border border-gray-200/90 bg-white p-3 sm:p-6 lg:p-8 shadow-2xs dark:border-white/10 dark:bg-[#151421] overscroll-contain">
               
               {chatState === ChatState.IDLE ? (
                 /* ======================================================= */
@@ -1469,18 +1829,18 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                 <div className="flex flex-col h-full justify-between select-none">
                   <div>
                     {/* Header */}
-                    <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
                       Welcome to V Mingle.
                     </h2>
 
                     {/* Guidelines List */}
-                    <div className="mt-5 sm:mt-6 space-y-2.5 sm:space-y-3 text-base sm:text-lg">
+                    <div className="mt-3 sm:mt-5 space-y-1.5 sm:space-y-2.5 text-xs sm:text-base lg:text-lg">
                       {/* Age restriction line */}
-                      <div className="flex items-center gap-2">
-                        <span className="flex items-center justify-center bg-[#ff3b30] text-white text-xs font-black px-1.5 py-0.5 rounded shadow-2xs">
+                      <div className="flex items-center gap-1.5 sm:gap-2">
+                        <span className="flex items-center justify-center bg-[#ff3b30] text-white text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded shadow-2xs">
                           18+
                         </span>
-                        <span className="text-[#f43f5e] dark:text-[#fb7185] font-bold text-base sm:text-lg">
+                        <span className="text-[#f43f5e] dark:text-[#fb7185] font-bold">
                           You must be 18 or older
                         </span>
                       </div>
@@ -1490,7 +1850,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                       </p>
 
                       <p className="text-gray-900 dark:text-gray-100 font-medium">
-                        Your camera must show you, live
+                        {mode === "video" ? "Your camera must show you, live" : "Be respectful, friendly, and authentic"}
                       </p>
 
                       <p className="text-gray-900 dark:text-gray-100 font-medium">
@@ -1502,33 +1862,51 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                       </p>
                     </div>
                   </div>
+
+                  {/* Primary User-Initiated Start Button */}
+                  <div className="mt-3 sm:mt-5 pt-3 border-t border-gray-100 dark:border-white/5 flex flex-col sm:flex-row items-start sm:items-center gap-2.5 sm:gap-3">
+                    <button
+                      type="button"
+                      onClick={startChat}
+                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-rose-500/25 transition-all cursor-pointer"
+                      id="welcome-start-chat-btn"
+                    >
+                      <span>{mode === "video" ? "📹 Start Video Chat" : "💬 Start Text Chat"}</span>
+                      <span className="hidden sm:inline px-1 text-[10px] rounded bg-white/20 font-mono">Esc</span>
+                    </button>
+                    {mode === "video" && mediaStatus !== "ready" && (
+                      <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                        Camera &amp; microphone access will be requested
+                      </span>
+                    )}
+                  </div>
                 </div>
               ) : chatState === ChatState.SEARCHING && messages.filter((m) => m.sender !== "system").length === 0 ? (
                 /* ======================================================= */
                 /* HIGH-TECH MATCHMAKING RADAR STATE                       */
                 /* ======================================================= */
-                <div className="flex flex-col items-center justify-center h-full text-center p-6 space-y-4">
-                  <div className="relative flex items-center justify-center w-20 h-20 sm:w-24 sm:h-24">
+                <div className="flex flex-col items-center justify-center h-full text-center p-3 sm:p-6 space-y-2 sm:space-y-4">
+                  <div className="relative flex items-center justify-center w-14 h-14 sm:w-24 sm:h-24">
                     <div className="absolute inset-0 rounded-full bg-rose-500/15 animate-ping" />
                     <div className="absolute inset-2 rounded-full bg-orange-500/25 animate-pulse" />
-                    <div className="relative flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 text-white shadow-xl shadow-rose-500/30">
-                      <svg className="animate-spin h-6 w-6 sm:h-7 sm:w-7" viewBox="0 0 24 24" fill="none">
+                    <div className="relative flex items-center justify-center w-10 h-10 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 text-white shadow-xl shadow-rose-500/30">
+                      <svg className="animate-spin h-5 w-5 sm:h-7 sm:w-7" viewBox="0 0 24 24" fill="none">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                       </svg>
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
+                    <h3 className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">
                       Looking for someone to chat with...
                     </h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
+                    <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 max-w-sm mx-auto">
                       {interests.length > 0
                         ? `Searching for strangers interested in #${interests.join(", #")}...`
                         : "Matching you randomly with someone online. Hold on tight!"}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 font-mono">
+                  <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-gray-400 dark:text-gray-500 font-mono">
                     <span>Press</span>
                     <kbd className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-bold">Esc</kbd>
                     <span>or click Stop to cancel</span>
@@ -1538,13 +1916,13 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                 /* ======================================================= */
                 /* LIVE MESSAGE STREAM                                     */
                 /* ======================================================= */
-                <div className="flex flex-col space-y-2.5 sm:space-y-3">
+                <div className="flex flex-col space-y-2 sm:space-y-3">
                   {messages.map((msg, index) => {
                     const messageKey = `${msg.id || "msg"}-${index}`;
                     if (msg.sender === "system") {
                       return (
-                        <div key={messageKey} className="my-1 text-center">
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 dark:bg-gray-800/80 border border-gray-200/50 dark:border-white/5 px-3 py-1 text-xs text-gray-600 dark:text-gray-300 shadow-2xs">
+                        <div key={messageKey} className="my-0.5 text-center">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-800/80 border border-gray-200/50 dark:border-white/5 px-2.5 py-0.5 text-[11px] sm:text-xs text-gray-600 dark:text-gray-300 shadow-2xs">
                             <span>ℹ️</span>
                             <span>{msg.text}</span>
                           </span>
@@ -1556,16 +1934,16 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     return (
                       <div
                         key={messageKey}
-                        className={`flex flex-col ${
+                        className={`flex flex-col select-text ${
                           isYou ? "items-end" : "items-start"
                         }`}
                       >
-                        <div className="flex items-center gap-1 text-[11px] text-gray-400 mb-0.5 px-1 font-medium">
+                        <div className="flex items-center gap-1 text-[10px] sm:text-[11px] text-gray-400 mb-0.5 px-1 font-medium select-text">
                           <span>{isYou ? "You" : "Stranger"}</span>
-                          <span className="text-[10px] text-gray-400/80">• {msg.time}</span>
+                          <span className="text-[9px] sm:text-[10px] text-gray-400/80">• {msg.time}</span>
                         </div>
                         <div
-                          className={`max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-xs break-words ${
+                          className={`max-w-[88%] sm:max-w-[78%] rounded-2xl px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm leading-relaxed shadow-xs break-words whitespace-pre-wrap select-text ${
                             isYou
                               ? "bg-gradient-to-tr from-orange-400 via-rose-500 to-pink-500 text-white rounded-br-xs"
                               : "bg-gray-100 text-[#18181b] dark:bg-[#201f30] dark:text-gray-100 rounded-bl-xs border border-gray-200/60 dark:border-white/5"
@@ -1579,16 +1957,16 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
                   {/* End of Chat Callout Card */}
                   {chatState === ChatState.ENDED && (
-                    <div className="my-4 p-5 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-200/80 dark:border-white/10 text-center space-y-2.5 animate-fade-in">
-                      <div className="text-2xl">👋</div>
-                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">Stranger has disconnected</h4>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
+                    <div className="my-2 p-3.5 sm:p-5 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-200/80 dark:border-white/10 text-center space-y-2 animate-fade-in">
+                      <div className="text-xl sm:text-2xl">👋</div>
+                      <h4 className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white">Stranger has disconnected</h4>
+                      <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
                         Your chat has ended. Click below to meet someone new!
                       </p>
                       <button
                         onClick={handleNext}
                         type="button"
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white text-xs font-extrabold shadow-md shadow-rose-500/25 transition-all cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white text-xs font-extrabold shadow-md shadow-rose-500/25 transition-all cursor-pointer"
                       >
                         <span>Find New Stranger</span>
                         <kbd className="px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono">Esc</kbd>
@@ -1603,14 +1981,14 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
             {/* Quick Reactions / Icebreakers Bar (Visible when connected) */}
             {chatState === ChatState.CONNECTED && (
-              <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto py-0.5 noSelect">
-                <span className="text-[11px] font-semibold text-gray-400 shrink-0">Quick Hi:</span>
+              <div className={`flex shrink-0 items-center gap-1 sm:gap-1.5 overflow-x-auto py-0.5 noSelect scrollbar-none ${isKeyboardOpen ? "hidden md:flex" : ""}`}>
+                <span className="text-[10px] sm:text-[11px] font-semibold text-gray-400 shrink-0">Quick Hi:</span>
                 {["👋 Hi there!", "😂 Haha", "🔥 Nice!", "Where are you from?", "What's up?"].map((icebreaker) => (
                   <button
                     key={icebreaker}
                     type="button"
                     onClick={() => sendMessage(undefined, icebreaker)}
-                    className="shrink-0 rounded-full border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#161522] px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 hover:border-rose-400 hover:bg-rose-50/50 dark:hover:bg-gray-800 transition-colors cursor-pointer shadow-2xs"
+                    className="shrink-0 rounded-full border border-gray-200/90 dark:border-white/10 bg-white dark:bg-[#161522] px-2 py-0.5 sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-medium text-gray-700 dark:text-gray-300 hover:border-rose-400 hover:bg-rose-50/50 dark:hover:bg-gray-800 transition-colors cursor-pointer shadow-2xs"
                   >
                     {icebreaker}
                   </button>
@@ -1621,12 +1999,12 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             {/* =========================================================== */}
             {/* MIDDLE ROW: SMART MATCH & GET PREMIUM PILLS                 */}
             {/* =========================================================== */}
-            <div className="flex items-center gap-2.5 shrink-0 px-0.5">
+            <div className={`flex items-center gap-1.5 sm:gap-2.5 shrink-0 px-0.5 ${isKeyboardOpen ? "hidden md:flex" : ""}`}>
               {/* Smart Match Pill */}
               <button
                 type="button"
                 onClick={() => setShowInterestsModal(true)}
-                className="inline-flex items-center gap-1.5 rounded-full bg-white hover:bg-gray-50 dark:bg-[#181726] dark:hover:bg-[#201e32] border border-gray-200/90 dark:border-white/10 px-3.5 py-1.5 text-xs font-semibold text-gray-800 dark:text-gray-200 transition-colors cursor-pointer shadow-2xs"
+                className="inline-flex items-center gap-1 sm:gap-1.5 rounded-full bg-white hover:bg-gray-50 dark:bg-[#181726] dark:hover:bg-[#201e32] border border-gray-200/90 dark:border-white/10 px-2.5 py-1 sm:px-3.5 sm:py-1.5 text-[11px] sm:text-xs font-semibold text-gray-800 dark:text-gray-200 transition-colors cursor-pointer shadow-2xs"
                 id="smart-match-btn"
               >
                 <span>🌍</span>
@@ -1638,7 +2016,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
               <button
                 type="button"
                 onClick={() => setShowPremiumModal(true)}
-                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:brightness-105 active:scale-95 px-4 py-1.5 text-xs font-bold text-white transition-all cursor-pointer shadow-2xs shadow-orange-500/20"
+                className="inline-flex items-center gap-1 sm:gap-1.5 rounded-full bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:brightness-105 active:scale-95 px-3 py-1 sm:px-4 sm:py-1.5 text-[11px] sm:text-xs font-bold text-white transition-all cursor-pointer shadow-2xs shadow-orange-500/20"
                 id="get-premium-btn"
               >
                 <span>⚡</span>
@@ -1649,27 +2027,27 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             {/* =========================================================== */}
             {/* BOTTOM ACTION ROW: Start/Stop/Next Buttons + Text Input      */}
             {/* =========================================================== */}
-            <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
               
               {/* PRIMARY ACTION BUTTONS (Context-Aware by State) */}
               {chatState === ChatState.IDLE ? (
                 <button
                   onClick={startChat}
                   type="button"
-                  className="flex h-[48px] sm:h-[56px] w-[70px] sm:w-[95px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
+                  className="flex h-[44px] sm:h-[54px] w-[62px] sm:w-[95px] shrink-0 flex-col items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
                   id="chat-start-btn"
                 >
-                  <span className="text-sm sm:text-base font-extrabold tracking-wide leading-tight">Start</span>
+                  <span className="text-xs sm:text-base font-extrabold tracking-wide leading-tight">Start</span>
                   <span className="hidden sm:inline text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
                 </button>
               ) : chatState === ChatState.ENDED ? (
                 <button
                   onClick={handleNext}
                   type="button"
-                  className="flex h-[48px] sm:h-[56px] w-[70px] sm:w-[95px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
+                  className="flex h-[44px] sm:h-[54px] w-[62px] sm:w-[95px] shrink-0 flex-col items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
                   id="chat-new-btn"
                 >
-                  <span className="text-sm sm:text-base font-extrabold tracking-wide leading-tight">New</span>
+                  <span className="text-xs sm:text-base font-extrabold tracking-wide leading-tight">New</span>
                   <span className="hidden sm:inline text-[10px] font-medium opacity-85 leading-none mt-0.5 font-mono">Esc</span>
                 </button>
               ) : (
@@ -1678,7 +2056,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                   <button
                     onClick={handleStop}
                     type="button"
-                    className={`flex h-[48px] sm:h-[56px] w-[56px] min-[380px]:w-[68px] sm:w-[84px] shrink-0 flex-col items-center justify-center rounded-2xl text-white shadow-sm active:scale-95 transition-all cursor-pointer ${
+                    className={`flex h-[44px] sm:h-[54px] w-[52px] min-[380px]:w-[62px] sm:w-[84px] shrink-0 flex-col items-center justify-center rounded-xl sm:rounded-2xl text-white shadow-sm active:scale-95 transition-all cursor-pointer ${
                       stopConfirm
                         ? "bg-red-600 hover:bg-red-700 animate-pulse"
                         : "bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600"
@@ -1696,7 +2074,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     <button
                       onClick={handleNext}
                       type="button"
-                      className="flex h-[48px] sm:h-[56px] w-[56px] min-[380px]:w-[68px] sm:w-[84px] shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
+                      className="flex h-[44px] sm:h-[54px] w-[52px] min-[380px]:w-[62px] sm:w-[84px] shrink-0 flex-col items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500 hover:brightness-105 active:scale-95 text-white shadow-md shadow-rose-500/25 transition-all cursor-pointer"
                       id="chat-next-btn"
                     >
                       <span className="text-xs sm:text-sm font-extrabold leading-tight">Next</span>
@@ -1719,19 +2097,19 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                       ? "Type a message to stranger..."
                       : chatState === ChatState.SEARCHING
                       ? "Waiting for a partner..."
-                      : ""
+                      : "Click Start to begin chat..."
                   }
                   disabled={chatState !== ChatState.CONNECTED}
-                  className="h-[52px] sm:h-[56px] w-full rounded-2xl border border-gray-200/90 bg-white pl-4 pr-12 text-sm sm:text-base text-gray-900 placeholder-gray-400 shadow-2xs outline-none transition-all focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 disabled:bg-white dark:disabled:bg-[#151421] dark:border-white/10 dark:bg-[#151421] dark:text-gray-100"
+                  className="h-[44px] sm:h-[54px] w-full rounded-xl sm:rounded-2xl border border-gray-200/90 bg-white pl-3.5 pr-10 sm:pr-12 text-base placeholder:text-xs sm:placeholder:text-sm text-gray-900 placeholder-gray-400 shadow-2xs outline-none transition-all focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 disabled:bg-white dark:disabled:bg-[#151421] dark:border-white/10 dark:bg-[#151421] dark:text-gray-100"
                 />
 
                 <button
                   type="submit"
                   disabled={!inputMessage.trim() || chatState !== ChatState.CONNECTED}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-[#f43f5e] transition-colors cursor-pointer disabled:opacity-35"
+                  className="absolute right-2 sm:right-3.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-[#f43f5e] transition-colors cursor-pointer disabled:opacity-35"
                   title="Send Message"
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                   </svg>
                 </button>
@@ -1754,7 +2132,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             role="dialog"
             aria-modal="true"
             aria-label="Report Stranger"
-            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]"
+            className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-gray-200 bg-white p-5 sm:p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]"
           >
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/10 text-red-500">
@@ -1836,7 +2214,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             role="dialog"
             aria-modal="true"
             aria-label="Chat Interests"
-            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]"
+            className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-gray-200 bg-white p-5 sm:p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1874,7 +2252,48 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
               </button>
             </form>
 
-            <div className="mt-4 flex flex-wrap gap-2 max-h-40 overflow-y-auto pt-1">
+            {/* Quick Suggestions */}
+            <div className="mt-3">
+              <div className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 mb-1.5">
+                Popular suggestions (click to add):
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {SUGGESTED_MODAL_TAGS.map((tag) => {
+                  const isSelected = interests.includes(tag);
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => handleToggleInterest(tag)}
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-all cursor-pointer ${
+                        isSelected
+                          ? "bg-rose-500 text-white font-semibold shadow-xs"
+                          : "bg-gray-100 hover:bg-gray-200/80 text-gray-700 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/15"
+                      }`}
+                    >
+                      #{tag}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 dark:border-white/5 pt-3">
+              <div className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                Your tags ({interests.length}/10):
+              </div>
+              {interests.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAllInterests}
+                  className="text-xs text-rose-500 hover:text-rose-600 font-semibold cursor-pointer underline"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+
+            <div className="mt-2 flex flex-wrap gap-2 max-h-36 overflow-y-auto pt-1">
               {interests.length > 0 ? (
                 interests.map((tag) => (
                   <span
@@ -1893,7 +2312,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                   </span>
                 ))
               ) : (
-                <span className="text-xs text-gray-400 italic">No interests added yet.</span>
+                <span className="text-xs text-gray-400 italic">No interests added yet. Matching randomly worldwide.</span>
               )}
             </div>
 
@@ -1923,7 +2342,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             role="dialog"
             aria-modal="true"
             aria-label="V Mingle Premium"
-            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]"
+            className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-gray-200 bg-white p-5 sm:p-6 shadow-2xl dark:border-white/10 dark:bg-[#161522]"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -1931,7 +2350,12 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                   <span className="text-lg">⚡</span>
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">V Mingle Premium</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">V Mingle Premium</h3>
+                    <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      Coming Soon
+                    </span>
+                  </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">Unlock supercharged matchmaking</p>
                 </div>
               </div>
@@ -1968,7 +2392,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
             </div>
 
             <div className="mt-6 flex items-center justify-between pt-3 border-t border-gray-100 dark:border-white/5">
-              <span className="text-xs font-semibold text-gray-500">Free preview available</span>
+              <span className="text-xs font-semibold text-gray-500">Feature Preview (Coming Soon)</span>
               <button
                 type="button"
                 onClick={() => setShowPremiumModal(false)}

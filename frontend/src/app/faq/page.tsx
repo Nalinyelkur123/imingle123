@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
-import { MingleeHeader } from "@/components/MingleeHeader";
-import { MingleeFooter } from "@/components/MingleeFooter";
+import { VMingleHeader } from "@/components/VMingleHeader";
+import { VMingleFooter } from "@/components/VMingleFooter";
 
 import { constructMetadata } from "@/config/site";
 
@@ -101,7 +101,7 @@ export default function FaqPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
       />
-      <MingleeHeader />
+      <VMingleHeader />
 
       <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
         <nav aria-label="Breadcrumb" className="mb-6">
@@ -161,7 +161,7 @@ export default function FaqPage() {
         </div>
       </main>
 
-      <MingleeFooter />
+      <VMingleFooter />
     </div>
   );
 }

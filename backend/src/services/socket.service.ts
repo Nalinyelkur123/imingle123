@@ -27,6 +27,37 @@ import {
   HairDetectionPayload,
 } from './shared-types.js';
 
+class SocketRateLimiter {
+  private socketLimits: Map<string, Map<string, number[]>> = new Map();
+
+  public checkRateLimit(socketId: string, event: string, max: number, windowMs: number): boolean {
+    const now = Date.now();
+    let events = this.socketLimits.get(socketId);
+    if (!events) {
+      events = new Map();
+      this.socketLimits.set(socketId, events);
+    }
+
+    const timestamps = events.get(event) || [];
+    const validTimestamps = timestamps.filter((t) => now - t < windowMs);
+
+    if (validTimestamps.length >= max) {
+      events.set(event, validTimestamps);
+      return false;
+    }
+
+    validTimestamps.push(now);
+    events.set(event, validTimestamps);
+    return true;
+  }
+
+  public cleanupSocket(socketId: string): void {
+    this.socketLimits.delete(socketId);
+  }
+}
+
+const socketRateLimiter = new SocketRateLimiter();
+
 let ioInstance: SocketIOServer | null = null;
 
 export function initSocketService(httpServer: HttpServer): SocketIOServer {
@@ -79,6 +110,35 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
     io.emit('online_count', { count: stats.onlineUsers });
   };
 
+  // Periodic queue sweep: pairs interest search timeouts to random fallback, or delayed interest pairs
+  const sweepInterval = setInterval(() => {
+    const sweeps = matchmaker.sweepQueues((id) => io.sockets.sockets.has(id));
+    for (const res of sweeps) {
+      const s1 = io.sockets.sockets.get(res.match.user1.socketId);
+      const s2 = io.sockets.sockets.get(res.match.user2.socketId);
+      if (s1 && s2) {
+        logger.info(
+          `Queue sweep match formed: ${res.match.matchId} between ${res.match.user1.sessionId} and ${res.match.user2.sessionId}`
+        );
+        s1.emit(ServerEvents.MATCH_FOUND, {
+          matchId: res.match.matchId,
+          partnerId: res.match.user2.socketId,
+          isInitiator: true,
+          sharedInterest: res.match.sharedInterest,
+          sharedInterests: res.match.sharedInterests || [],
+        });
+        s2.emit(ServerEvents.MATCH_FOUND, {
+          matchId: res.match.matchId,
+          partnerId: res.match.user1.socketId,
+          isInitiator: false,
+          sharedInterest: res.match.sharedInterest,
+          sharedInterests: res.match.sharedInterests || [],
+        });
+      }
+    }
+  }, 1000);
+  if (sweepInterval.unref) sweepInterval.unref();
+
   io.on('connection', (socket: Socket) => {
     let currentSessionId = socket.data.sessionId as string;
     let currentUserId = socket.data.userId as string;
@@ -130,6 +190,7 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
         partnerId: reconnectResult.partnerSocketId,
         isInitiator: reconnectResult.isInitiator,
         sharedInterest: reconnectResult.match.sharedInterest,
+        sharedInterests: reconnectResult.match.sharedInterests || [],
       });
 
       io.to(reconnectResult.partnerSocketId).emit('peer_reconnected', {
@@ -143,6 +204,15 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
     socket.on(
       ClientEvents.JOIN_QUEUE,
       (payload: { mode?: ChatMode; interests?: string[] }) => {
+        if (!socketRateLimiter.checkRateLimit(socket.id, ClientEvents.JOIN_QUEUE, 8, 2000)) {
+          logger.warn(`Rate limit exceeded for JOIN_QUEUE on socket ${socket.id}`);
+          socket.emit(ServerEvents.ERROR, {
+            code: ErrorCode.RATE_LIMITED,
+            message: 'You are switching searches too fast. Please wait a moment.',
+          });
+          return;
+        }
+
         const mode: ChatMode = payload?.mode === 'video' ? 'video' : 'text';
         const interests: string[] = Array.isArray(payload?.interests)
           ? payload.interests
@@ -183,6 +253,7 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
             partnerId: result.partnerSocketId,
             isInitiator: true,
             sharedInterest: result.match.sharedInterest,
+            sharedInterests: result.match.sharedInterests || [],
           });
 
           // Emit MATCH_FOUND to answering peer (partner)
@@ -191,6 +262,7 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
             partnerId: socket.id,
             isInitiator: false,
             sharedInterest: result.match.sharedInterest,
+            sharedInterests: result.match.sharedInterests || [],
           });
         }
       }
@@ -203,6 +275,14 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── SEND MESSAGE ────────────────────────────────────────────────────────
     socket.on(ClientEvents.SEND_MESSAGE, (payload: SendMessagePayload) => {
+      if (!socketRateLimiter.checkRateLimit(socket.id, ClientEvents.SEND_MESSAGE, 5, 2000)) {
+        socket.emit(ServerEvents.ERROR, {
+          code: ErrorCode.RATE_LIMITED,
+          message: 'You are sending messages too quickly.',
+        });
+        return;
+      }
+
       const match = matchmaker.getMatchBySocket(socket.id);
       if (!match) {
         socket.emit(ServerEvents.ERROR, {
@@ -313,6 +393,11 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── REPORT USER ─────────────────────────────────────────────────────────
     socket.on(ClientEvents.REPORT_USER, async (payload: ReportPayload) => {
+      if (!socketRateLimiter.checkRateLimit(socket.id, ClientEvents.REPORT_USER, 2, 10000)) {
+        logger.warn(`Rate limit exceeded for REPORT_USER on socket ${socket.id}`);
+        return;
+      }
+
       const activeSessionId = socket.data.sessionId as string;
       const partnerSocketId = matchmaker.getPartnerSocketId(socket.id);
       const match = matchmaker.getMatchBySocket(socket.id);
@@ -355,6 +440,10 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── REAL-TIME HAIR DETECTION EVENT ──────────────────────────────────────
     socket.on(ClientEvents.HAIR_DETECTION_RESULT, async (payload: HairDetectionPayload) => {
+      if (!socketRateLimiter.checkRateLimit(socket.id, ClientEvents.HAIR_DETECTION_RESULT, 10, 1000)) {
+        return;
+      }
+
       try {
         const sid = socket.data.sessionId as string;
         await hairDetectionService.processDetectionEvent(sid, payload, socket.data.userId);
@@ -368,6 +457,7 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── DISCONNECT ──────────────────────────────────────────────────────────
     socket.on('disconnect', () => {
+      socketRateLimiter.cleanupSocket(socket.id);
       const sid = socket.data.sessionId as string;
       logger.info(`Socket disconnected: ${socket.id} (Session: ${sid})`);
       hairDetectionService.onSessionDisconnected(sid);

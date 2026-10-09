@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
 
 export function VMingleHeader() {
@@ -36,9 +37,12 @@ export function VMingleHeader() {
           {/* Friendly Smiling Face Icon in Warm Yellow-Orange-Magenta Gradient */}
           <div className="relative flex h-9 w-9 sm:h-11 lg:h-12 sm:w-11 lg:w-12 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-tr from-amber-400 via-orange-500 to-rose-500 p-0.5 shadow-md shadow-orange-500/20 group-hover:scale-105 transition-transform overflow-hidden">
             <div className="h-full w-full rounded-[10px] sm:rounded-[14px] bg-white flex items-center justify-center p-1 sm:p-1.5 overflow-hidden">
-              <img
+              <Image
                 src="/favicon.png"
                 alt="V Mingle logo"
+                width={40}
+                height={40}
+                unoptimized
                 className="h-full w-full object-contain select-none pointer-events-none"
               />
             </div>
@@ -73,24 +77,37 @@ export function VMingleHeader() {
             </button>
 
             {langMenuOpen && (
-              <div className="absolute right-0 mt-2 w-36 rounded-2xl bg-white border border-gray-200 p-1.5 shadow-xl shadow-gray-200/50 z-50 animate-fade-in">
-                {languages.map((l) => (
-                  <button
-                    key={l.code}
-                    onClick={() => {
-                      setSelectedLang(l.code);
-                      setLangMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl text-left transition-colors cursor-pointer ${
-                      selectedLang === l.code
-                        ? "bg-rose-50 text-[#f43f5e]"
-                        : "text-gray-700 hover:bg-gray-50"
-                    }`}
-                  >
-                    <span>{l.label}</span>
-                    {selectedLang === l.code && <span className="text-[10px]">✓</span>}
-                  </button>
-                ))}
+              <div className="absolute right-0 mt-2 w-48 rounded-2xl bg-white border border-gray-200 p-1.5 shadow-xl shadow-gray-200/50 z-50 animate-fade-in">
+                {languages.map((l) => {
+                  const isAvailable = l.code === "EN";
+                  return (
+                    <button
+                      key={l.code}
+                      disabled={!isAvailable}
+                      onClick={() => {
+                        if (!isAvailable) return;
+                        setSelectedLang(l.code);
+                        setLangMenuOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl text-left transition-colors ${
+                        !isAvailable
+                          ? "text-gray-400 cursor-not-allowed opacity-75"
+                          : selectedLang === l.code
+                          ? "bg-rose-50 text-[#f43f5e] cursor-pointer"
+                          : "text-gray-700 hover:bg-gray-50 cursor-pointer"
+                      }`}
+                    >
+                      <span>{l.label}</span>
+                      {isAvailable ? (
+                        selectedLang === l.code && <span className="text-[10px]">✓</span>
+                      ) : (
+                        <span className="text-[10px] font-medium bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">
+                          Coming Soon
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -110,4 +127,4 @@ export function VMingleHeader() {
   );
 }
 
-export { VMingleHeader as MingleeHeader };
+

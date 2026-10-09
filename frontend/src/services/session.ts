@@ -68,10 +68,21 @@ export async function initAnonymousSession(
   }
 
   try {
+    let interests: string[] = [];
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("umingle_interests");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) interests = parsed;
+        }
+      } catch {}
+    }
+
     const res = await fetch(`${getApiBaseUrl()}/api/session/init`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ mode }),
+      body: JSON.stringify({ mode, interests }),
     });
 
     if (!res.ok) {
