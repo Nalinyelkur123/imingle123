@@ -37,8 +37,13 @@ sessionService.init().catch((err) => {
 initSocketService(httpServer);
 
 // ── Middleware chain ────────────────────────────────────────────────────────
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
 app.use(requestIdMiddleware);
 

@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "tsx test_matchmaking_e2e.ts && tsx test_permissions_and_webrtc.ts && tsx test_production_e2e.ts && tsx test_interests_matching.ts",
+    "test": "tsx test_matchmaking_e2e.ts && tsx test_permissions_and_webrtc.ts && tsx test_production_e2e.ts && tsx test_interests_matching.ts && tsx test_cors_e2e.ts",
+    "test:cors": "tsx test_cors_e2e.ts",
     "test:interests": "tsx test_interests_matching.ts",
     "test:permissions": "tsx test_permissions_and_webrtc.ts"
   },
