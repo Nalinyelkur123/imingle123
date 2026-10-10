@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { sessionStore, SessionRecord, SessionStatus } from './session.store.js';
+import { matchmaker } from './matchmaker.service.js';
 import { ChatMode } from './shared-types.js';
 
 // Default session expiration: 2 hours of inactivity
@@ -193,9 +194,11 @@ export class SessionService {
   }
 
   /**
-   * Explicitly closes a session
+   * Explicitly closes a session and evicts from matchmaking queues and active matches
    */
   public async endSession(sessionId: string): Promise<void> {
+    matchmaker.leaveQueue(sessionId);
+    matchmaker.endMatch(sessionId, 'session_ended');
     await sessionStore.updateSessionStatus(sessionId, 'ended', null);
   }
 }

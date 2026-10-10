@@ -14,6 +14,7 @@ export type ChatMode = 'video' | 'text';
 export interface QueueEntry {
   sessionId: string;
   socketId: string;
+  userId?: string;
   mode: ChatMode;
   interests: string[];
   joinedAt: number;
@@ -81,7 +82,7 @@ class MatchmakerService {
   private lastPartnerSession: Map<string, string> = new Map();
 
   // Interest search window before eligible for random stranger fallback (in ms)
-  private interestSearchWindowMs = 3000;
+  private interestSearchWindowMs = 2000;
 
   public setInterestSearchWindowMs(ms: number): void {
     this.interestSearchWindowMs = ms;
@@ -273,12 +274,21 @@ class MatchmakerService {
    * Automatically filters stale/dead candidates.
    */
   public joinQueue(
-    sessionId: string,
-    socketId: string,
-    mode: ChatMode,
-    interests: string[] = [],
-    userId?: string,
-    isSocketAlive?: (id: string) => boolean
+    sessionIdOrOptions:
+      | string
+      | {
+          sessionId: string;
+          socketId: string;
+          mode: ChatMode;
+          interests?: string[];
+          userId?: string;
+          isSocketAlive?: (id: string) => boolean;
+        },
+    rawSocketId?: string,
+    rawMode?: ChatMode,
+    rawInterests: string[] = [],
+    rawUserId?: string,
+    rawIsSocketAlive?: (id: string) => boolean
   ): {
     matched: boolean;
     match?: ActiveMatch;
@@ -286,6 +296,13 @@ class MatchmakerService {
     partnerSessionId?: string;
     previousPartnerSocketId?: string;
   } {
+    const sessionId = typeof sessionIdOrOptions === 'object' ? sessionIdOrOptions.sessionId : sessionIdOrOptions;
+    const socketId = typeof sessionIdOrOptions === 'object' ? sessionIdOrOptions.socketId : rawSocketId!;
+    const mode = typeof sessionIdOrOptions === 'object' ? sessionIdOrOptions.mode : rawMode!;
+    const interests = typeof sessionIdOrOptions === 'object' ? (sessionIdOrOptions.interests || []) : rawInterests;
+    const userId = typeof sessionIdOrOptions === 'object' ? sessionIdOrOptions.userId : rawUserId;
+    const isSocketAlive = typeof sessionIdOrOptions === 'object' ? sessionIdOrOptions.isSocketAlive : rawIsSocketAlive;
+
     // If user is already in a match, record previous partner and end it cleanly
     let previousPartnerSocketId: string | undefined;
     const existingMatchId = this.sessionToMatch.get(sessionId);
@@ -320,7 +337,9 @@ class MatchmakerService {
     // Self-match prevention: skip same session, socket, or user
     const isEligible = (candidate: QueueEntry) => {
       if (candidate.sessionId === sessionId || candidate.socketId === socketId) return false;
-      if (userId && this.socketToSession.get(candidate.socketId)?.userId === userId) return false;
+      const effectiveUserId = userId || this.socketToSession.get(socketId)?.userId;
+      const candidateUserId = candidate.userId || this.socketToSession.get(candidate.socketId)?.userId;
+      if (effectiveUserId && candidateUserId && candidateUserId === effectiveUserId) return false;
       return true;
     };
 
@@ -485,6 +504,7 @@ class MatchmakerService {
     const entry: QueueEntry = {
       sessionId,
       socketId,
+      userId: userId || this.socketToSession.get(socketId)?.userId,
       mode,
       interests: normalizedInterests,
       joinedAt: Date.now(),
@@ -551,10 +571,27 @@ class MatchmakerService {
   }
 
   /**
-   * Ends an active match and records reason
+   * Retrieves active match for a given matchId
    */
-  public endMatch(matchId: string, endReason = 'user_action'): ActiveMatch | undefined {
-    const match = this.activeMatches.get(matchId);
+  public getMatch(matchId: string): ActiveMatch | undefined {
+    return this.activeMatches.get(matchId);
+  }
+
+  /**
+   * Ends an active match and records reason (supports matchId or sessionId)
+   */
+  public endMatch(matchIdOrSessionId: string, endReason = 'user_action'): ActiveMatch | undefined {
+    let match = this.activeMatches.get(matchIdOrSessionId);
+    let matchId = matchIdOrSessionId;
+
+    if (!match) {
+      const resolvedMatchId = this.sessionToMatch.get(matchIdOrSessionId);
+      if (resolvedMatchId) {
+        match = this.activeMatches.get(resolvedMatchId);
+        matchId = resolvedMatchId;
+      }
+    }
+
     if (!match) return undefined;
 
     // Clear any pending reconnect timers
@@ -636,7 +673,16 @@ class MatchmakerService {
           for (let j = i + 1; j < queue.length; j++) {
             const c1 = queue[i];
             const c2 = queue[j];
-            if (c1.sessionId === c2.sessionId || c1.socketId === c2.socketId) continue;
+            const u1 = c1.userId || this.socketToSession.get(c1.socketId)?.userId;
+            const u2 = c2.userId || this.socketToSession.get(c2.socketId)?.userId;
+            if (
+              c1.sessionId === c2.sessionId ||
+              c1.socketId === c2.socketId ||
+              (c1.userId && c2.userId && c1.userId === c2.userId) ||
+              (u1 && u2 && u1 === u2)
+            ) {
+              continue;
+            }
 
             const common = c1.interests.filter((t) => c2.interests.includes(t));
             if (common.length > 0) {
@@ -699,43 +745,68 @@ class MatchmakerService {
         }
 
         if (readyIndices.length >= 2) {
-          const idx2 = readyIndices[1];
-          const idx1 = readyIndices[0];
+          let pairIndices: [number, number] | null = null;
+          for (let i = 0; i < readyIndices.length; i++) {
+            for (let j = i + 1; j < readyIndices.length; j++) {
+              const idx1 = readyIndices[i];
+              const idx2 = readyIndices[j];
+              const c1 = queue[idx1];
+              const c2 = queue[idx2];
+              const u1 = c1.userId || this.socketToSession.get(c1.socketId)?.userId;
+              const u2 = c2.userId || this.socketToSession.get(c2.socketId)?.userId;
+              const isSelf =
+                c1.sessionId === c2.sessionId ||
+                c1.socketId === c2.socketId ||
+                (c1.userId && c2.userId && c1.userId === c2.userId) ||
+                (u1 && u2 && u1 === u2);
 
-          const p2 = queue.splice(idx2, 1)[0];
-          const p1 = queue.splice(idx1, 1)[0];
+              if (!isSelf) {
+                pairIndices = [idx1, idx2];
+                break;
+              }
+            }
+            if (pairIndices) break;
+          }
 
-          const matchId = `match_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-          const activeMatch: ActiveMatch = {
-            matchId,
-            mode,
-            user1: { sessionId: p1.sessionId, socketId: p1.socketId, interests: p1.interests },
-            user2: { sessionId: p2.sessionId, socketId: p2.socketId, interests: p2.interests },
-            sharedInterest: null,
-            sharedInterests: [],
-            startedAt: Date.now(),
-            status: 'active',
-          };
+          if (pairIndices) {
+            const idx2 = Math.max(pairIndices[0], pairIndices[1]);
+            const idx1 = Math.min(pairIndices[0], pairIndices[1]);
 
-          this.activeMatches.set(matchId, activeMatch);
-          this.sessionToMatch.set(p1.sessionId, matchId);
-          this.sessionToMatch.set(p2.sessionId, matchId);
+            const p2 = queue.splice(idx2, 1)[0];
+            const p1 = queue.splice(idx1, 1)[0];
 
-          sessionStore.updateSessionStatus(p1.sessionId, 'matched', matchId).catch(() => {});
-          sessionStore.updateSessionStatus(p2.sessionId, 'matched', matchId).catch(() => {});
-          sessionStore.recordMatch({
-            matchId,
-            sessionId1: p1.sessionId,
-            sessionId2: p2.sessionId,
-            mode,
-            sharedInterest: null,
-            startedAt: activeMatch.startedAt,
-            endedAt: null,
-            endReason: null,
-          }).catch(() => {});
+            const matchId = `match_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+            const activeMatch: ActiveMatch = {
+              matchId,
+              mode,
+              user1: { sessionId: p1.sessionId, socketId: p1.socketId, interests: p1.interests },
+              user2: { sessionId: p2.sessionId, socketId: p2.socketId, interests: p2.interests },
+              sharedInterest: null,
+              sharedInterests: [],
+              startedAt: Date.now(),
+              status: 'active',
+            };
 
-          results.push({ match: activeMatch, partnerSocketId: p2.socketId, partnerSessionId: p2.sessionId });
-          foundRandomMatch = true;
+            this.activeMatches.set(matchId, activeMatch);
+            this.sessionToMatch.set(p1.sessionId, matchId);
+            this.sessionToMatch.set(p2.sessionId, matchId);
+
+            sessionStore.updateSessionStatus(p1.sessionId, 'matched', matchId).catch(() => {});
+            sessionStore.updateSessionStatus(p2.sessionId, 'matched', matchId).catch(() => {});
+            sessionStore.recordMatch({
+              matchId,
+              sessionId1: p1.sessionId,
+              sessionId2: p2.sessionId,
+              mode,
+              sharedInterest: null,
+              startedAt: activeMatch.startedAt,
+              endedAt: null,
+              endReason: null,
+            }).catch(() => {});
+
+            results.push({ match: activeMatch, partnerSocketId: p2.socketId, partnerSessionId: p2.sessionId });
+            foundRandomMatch = true;
+          }
         }
       }
     }

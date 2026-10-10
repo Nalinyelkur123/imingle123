@@ -27,6 +27,9 @@ export interface DispatchOptions {
 export class HairDetectionService {
   private recentDeliveries: DetectionEventDeliveryResult[] = [];
   private activeSessionDetections: Map<string, { lastDetectedAt: number; count: number }> = new Map();
+  private circuitOpenUntil = 0;
+  private lastCircuitWarnLogAt = 0;
+  private static readonly CIRCUIT_COOLDOWN_MS = 30_000;
 
   /**
    * Processes an incoming detection event from a user session.
@@ -109,6 +112,28 @@ export class HairDetectionService {
     const destinationPort = options?.destinationPort ?? env.DETECTION_DESTINATION_PORT;
     const destinationUrl = `http://${destinationHost}:${destinationPort}/api/hair-detection`;
 
+    // Circuit breaker check: If destination was recently unreachable, suppress repeated network calls
+    const now = Date.now();
+    if (now < this.circuitOpenUntil) {
+      const processingTime = now - startTime;
+      const remainingSeconds = Math.ceil((this.circuitOpenUntil - now) / 1000);
+      const failedResult: DetectionEventDeliveryResult = {
+        session_id: payload.session_id,
+        user_id: payload.user_id,
+        long_hair_detected: payload.long_hair_detected,
+        confidence: payload.confidence,
+        timestamp: payload.timestamp,
+        destination_ip: destinationHost,
+        destination_port: destinationPort,
+        processing_time_ms: processingTime,
+        status: 'FAILED',
+        error_message: `Circuit open: destination ${destinationHost}:${destinationPort} unreachable. Backing off for ${remainingSeconds}s`,
+      };
+
+      this.recordLog(failedResult, true);
+      return failedResult;
+    }
+
     const maxRetries = options?.maxRetries ?? env.DETECTION_RETRY_COUNT;
     const timeoutMs = options?.timeoutMs ?? env.DETECTION_TIMEOUT_MS;
     const initialBackoffMs = options?.initialBackoffMs ?? 500;
@@ -138,6 +163,10 @@ export class HairDetectionService {
         clearTimeout(timeoutHandle);
 
         if (response.ok) {
+          // Reset circuit breaker on success
+          this.circuitOpenUntil = 0;
+          this.lastCircuitWarnLogAt = 0;
+
           const processingTime = Date.now() - startTime;
           const result: DetectionEventDeliveryResult = {
             session_id: payload.session_id,
@@ -170,13 +199,15 @@ export class HairDetectionService {
         const cause = (err as { cause?: { code?: string; message?: string } })?.cause;
         const code = (err as { code?: string })?.code || cause?.code;
         const errStr = `${lastError} ${cause?.message || ''}`;
-        if (
+        const isConnRefused =
           code === 'ECONNREFUSED' ||
           code === 'ENOTFOUND' ||
           code === 'ECONNRESET' ||
-          /econnrefused|connection refused/i.test(errStr)
-        ) {
-          // Fast-fail after first failure if connection is refused to protect Node.js event loop
+          /econnrefused|connection refused|fetch failed/i.test(errStr);
+
+        if (isConnRefused) {
+          // Trip circuit breaker immediately to protect Node.js event loop
+          this.circuitOpenUntil = Date.now() + HairDetectionService.CIRCUIT_COOLDOWN_MS;
           break;
         }
       }
@@ -189,6 +220,11 @@ export class HairDetectionService {
     }
 
     // Exhausted retries -> Record failure gracefully without throwing
+    const isConnRefused = /connection refused|econnrefused|fetch failed/i.test(lastError || '');
+    if (isConnRefused) {
+      this.circuitOpenUntil = Date.now() + HairDetectionService.CIRCUIT_COOLDOWN_MS;
+    }
+
     const processingTime = Date.now() - startTime;
     const failedResult: DetectionEventDeliveryResult = {
       session_id: payload.session_id,
@@ -203,14 +239,14 @@ export class HairDetectionService {
       error_message: lastError,
     };
 
-    this.recordLog(failedResult);
+    this.recordLog(failedResult, false);
     return failedResult;
   }
 
   /**
    * Outputs structured detection logs per requirement specification
    */
-  private recordLog(result: DetectionEventDeliveryResult): void {
+  private recordLog(result: DetectionEventDeliveryResult, isThrottled = false): void {
     // 1. Maintain in-memory delivery history (capped at 200 items)
     this.recentDeliveries.unshift(result);
     if (this.recentDeliveries.length > 200) {
@@ -243,8 +279,25 @@ export class HairDetectionService {
     if (result.status === 'SUCCESS') {
       logger.info(structuredEntry);
     } else {
-      logger.warn(structuredEntry);
+      const now = Date.now();
+      if (isThrottled) {
+        if (now - this.lastCircuitWarnLogAt >= HairDetectionService.CIRCUIT_COOLDOWN_MS) {
+          this.lastCircuitWarnLogAt = now;
+          logger.warn(`${structuredEntry} | note="circuit open; suppressing repeated failure logs for 30s"`);
+        }
+      } else {
+        this.lastCircuitWarnLogAt = now;
+        logger.warn(structuredEntry);
+      }
     }
+  }
+
+  /**
+   * Reset circuit breaker state (useful for tests or after reconfiguring destination)
+   */
+  public resetCircuitBreaker(): void {
+    this.circuitOpenUntil = 0;
+    this.lastCircuitWarnLogAt = 0;
   }
 
   /**
@@ -269,6 +322,7 @@ export class HairDetectionService {
     configuredDestination: string;
     fps: number;
     enabled: boolean;
+    circuitOpen: boolean;
     activeSessionsCount: number;
     totalDeliveries: number;
   } {
@@ -276,6 +330,7 @@ export class HairDetectionService {
       configuredDestination: `http://${env.DETECTION_DESTINATION_IP}:${env.DETECTION_DESTINATION_PORT}/api/hair-detection`,
       fps: env.DETECTION_FPS,
       enabled: env.DETECTION_ENABLED,
+      circuitOpen: Date.now() < this.circuitOpenUntil,
       activeSessionsCount: this.activeSessionDetections.size,
       totalDeliveries: this.recentDeliveries.length,
     };

@@ -31,7 +31,13 @@ const envSchema = z.object({
   DETECTION_FPS: z.coerce.number().default(5),
   DETECTION_RETRY_COUNT: z.coerce.number().default(3),
   DETECTION_TIMEOUT_MS: z.coerce.number().default(5000),
-  DETECTION_ENABLED: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(true),
+  DETECTION_ENABLED: z
+    .preprocess((val) => {
+      if (typeof val === 'string') return val.toLowerCase() === 'true';
+      if (typeof val === 'boolean') return val;
+      return false;
+    }, z.boolean())
+    .default(false),
 });
 
 const parsed = envSchema.safeParse(process.env);

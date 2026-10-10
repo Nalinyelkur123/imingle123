@@ -34,7 +34,7 @@ export default function PrivacyPage() {
     {
       title: "Ephemeral, Tab-Isolated Session Storage",
       description:
-        "We generate a cryptographically signed anonymous session token stored solely in your browser's sessionStorage and HttpOnly session cookies. It ensures connection stability if your WiFi blips, and automatically purges when you close the tab.",
+        "We generate a cryptographically signed anonymous session token stored solely in browser memory and temporary session storage (sessionStorage). It ensures connection stability if your WiFi blips, with zero tracking or advertising cookies, and automatically purges when you close the tab.",
       icon: "⏱️",
     },
   ];
@@ -63,7 +63,7 @@ export default function PrivacyPage() {
     {
       title: "5. Cookies & Local Browser Storage",
       content:
-        "We do not use tracking cookies, retargeting pixels, or third-party advertising cookies. We only use functional session storage and a secure HttpOnly session cookie (vmingle_sess) to preserve continuity during an active chat session. You can clear this data at any time by closing your browser tab or clearing browser cache.",
+        "V Mingle uses anonymous cryptographic session tokens stored exclusively in browser memory and temporary session storage (sessionStorage) with zero tracking, profiling, or third-party advertising cookies. These ephemeral tokens exist solely to preserve connection stability and session continuity during active chat interactions. No persistent tracking or advertising cookies are ever stored, and all session state is discarded when you close your browser tab or clear your browser cache.",
     },
     {
       title: "6. Children's Privacy (Under 18 Notice)",

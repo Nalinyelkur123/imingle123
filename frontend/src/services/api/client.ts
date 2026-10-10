@@ -33,13 +33,15 @@ export async function fetchLiveStats(): Promise<StatsResponse | null> {
 }
 
 export async function submitReportApi(
-  payload: ReportPayload & { matchId?: string; reportedUserId?: string }
+  payload: ReportPayload & { matchId?: string; reportedUserId?: string; token?: string; reporterSessionId?: string }
 ): Promise<boolean> {
   try {
+    const token = payload.token || (typeof window !== "undefined" ? sessionStorage.getItem("umingle_anonymous_session_token") : null);
     const res = await fetch(`${getApiBaseUrl()}/api/reports`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(payload),
     });
@@ -54,10 +56,6 @@ export async function fetchIceServers(): Promise<RTCIceServer[]> {
     {
       urls: [
         "stun:stun.l.google.com:19302",
-        "stun:stun1.l.google.com:19302",
-        "stun:stun2.l.google.com:19302",
-        "stun:stun3.l.google.com:19302",
-        "stun:stun4.l.google.com:19302",
         "stun:stun.cloudflare.com:3478",
       ],
     },

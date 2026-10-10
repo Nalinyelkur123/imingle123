@@ -1,4 +1,6 @@
-const PROD_BACKEND_URL = "https://imingle-backend.onrender.com";
+// ============================================================================
+// NexusChat — API & WebSocket Dynamic Configuration
+// ============================================================================
 
 export function getApiBaseUrl(): string {
   if (typeof window !== "undefined") {
@@ -10,16 +12,29 @@ export function getApiBaseUrl(): string {
       return envUrl;
     }
 
-    // 2. If running locally on localhost/127.0.0.1
+    // 2. Check if hostname is a LAN IP or mDNS hostname (.local)
+    const isLanIp =
+      /^192\.168\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+      hostname.endsWith(".local");
+    if (isLanIp) {
+      return `http://${hostname}:3001`;
+    }
+
+    // 3. If running locally on localhost/127.0.0.1
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return envUrl || "http://localhost:3001";
     }
 
-    // 3. In production, connect to the configured live backend server
-    return envUrl || PROD_BACKEND_URL;
+    // 4. In production, default fallback to configured URL or origin
+    return (
+      process.env.NEXT_PUBLIC_API_URL ||
+      (typeof window !== "undefined" ? window.location.origin : "http://localhost:3001")
+    );
   }
 
-  return process.env.NEXT_PUBLIC_API_URL || PROD_BACKEND_URL;
+  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 }
 
 /**
@@ -35,14 +50,27 @@ export function getWsUrl(): string {
       return envUrl;
     }
 
-    // 2. If running locally on localhost/127.0.0.1
+    // 2. Check if hostname is a LAN IP or mDNS hostname (.local)
+    const isLanIp =
+      /^192\.168\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+      hostname.endsWith(".local");
+    if (isLanIp) {
+      return `http://${hostname}:3001`;
+    }
+
+    // 3. If running locally on localhost/127.0.0.1
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return envUrl || "http://localhost:3001";
     }
 
-    // 3. In production, connect to the configured live backend server
-    return envUrl || PROD_BACKEND_URL;
+    // 4. In production, default fallback to configured URL or origin
+    return (
+      process.env.NEXT_PUBLIC_WS_URL ||
+      (typeof window !== "undefined" ? window.location.origin : "http://localhost:3001")
+    );
   }
 
-  return process.env.NEXT_PUBLIC_WS_URL || PROD_BACKEND_URL;
+  return process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3001";
 }

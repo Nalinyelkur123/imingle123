@@ -7,6 +7,7 @@
 
 import { Request, Response } from 'express';
 import { sessionService } from '../services/session.service.js';
+import { matchmaker } from '../services/matchmaker.service.js';
 import { logger } from '../utils/logger.js';
 import { ChatMode } from '../services/shared-types.js';
 
@@ -124,6 +125,8 @@ export async function endSession(req: Request, res: Response): Promise<void> {
 
     if (verified) {
       await sessionService.endSession(verified.sessionId);
+      matchmaker.leaveQueue(verified.sessionId);
+      matchmaker.endMatch(verified.sessionId, 'session_ended');
     }
 
     res.status(200).json({

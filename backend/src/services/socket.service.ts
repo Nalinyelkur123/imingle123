@@ -134,9 +134,31 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
           sharedInterest: res.match.sharedInterest,
           sharedInterests: res.match.sharedInterests || [],
         });
+      } else {
+        matchmaker.endMatch(res.match.matchId, 'partner_disconnected');
+        if (s1 && s1.connected) {
+          matchmaker.joinQueue({
+            sessionId: res.match.user1.sessionId,
+            socketId: res.match.user1.socketId,
+            userId: s1.data.userId || res.match.user1.sessionId,
+            mode: res.match.mode,
+            interests: res.match.user1.interests || [],
+          });
+          logger.info(`Surviving socket ${s1.id} re-enqueued; dead peer cleared for match ${res.match.matchId}`);
+        }
+        if (s2 && s2.connected) {
+          matchmaker.joinQueue({
+            sessionId: res.match.user2.sessionId,
+            socketId: res.match.user2.socketId,
+            userId: s2.data.userId || res.match.user2.sessionId,
+            mode: res.match.mode,
+            interests: res.match.user2.interests || [],
+          });
+          logger.info(`Surviving socket ${s2.id} re-enqueued; dead peer cleared for match ${res.match.matchId}`);
+        }
       }
     }
-  }, 1000);
+  }, 250);
   if (sweepInterval.unref) sweepInterval.unref();
 
   io.on('connection', (socket: Socket) => {
@@ -317,6 +339,11 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── WEBRTC SIGNALING: OFFER ─────────────────────────────────────────────
     socket.on(ClientEvents.WEBRTC_OFFER, (payload: WebRTCOfferPayload) => {
+      if (!socketRateLimiter.checkRateLimit(socket.id, 'webrtc_sdp', 15, 1000)) {
+        logger.warn(`WebRTC SDP rate limit exceeded on socket ${socket.id} (dropped WEBRTC_OFFER)`);
+        return;
+      }
+
       const match = matchmaker.getMatchBySocket(socket.id) || matchmaker.getMatchBySession(socket.data.sessionId);
       if (!match) return;
       if (payload?.matchId && match.matchId !== payload.matchId) return;
@@ -331,6 +358,11 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── WEBRTC SIGNALING: ANSWER ────────────────────────────────────────────
     socket.on(ClientEvents.WEBRTC_ANSWER, (payload: WebRTCAnswerPayload) => {
+      if (!socketRateLimiter.checkRateLimit(socket.id, 'webrtc_sdp', 15, 1000)) {
+        logger.warn(`WebRTC SDP rate limit exceeded on socket ${socket.id} (dropped WEBRTC_ANSWER)`);
+        return;
+      }
+
       const match = matchmaker.getMatchBySocket(socket.id) || matchmaker.getMatchBySession(socket.data.sessionId);
       if (!match) return;
       if (payload?.matchId && match.matchId !== payload.matchId) return;
@@ -345,6 +377,11 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
 
     // ── WEBRTC SIGNALING: ICE CANDIDATE ─────────────────────────────────────
     socket.on(ClientEvents.ICE_CANDIDATE, (payload: ICECandidatePayload) => {
+      if (!socketRateLimiter.checkRateLimit(socket.id, 'webrtc_ice', 40, 1000)) {
+        logger.warn(`WebRTC ICE rate limit exceeded on socket ${socket.id} (dropped ICE_CANDIDATE)`);
+        return;
+      }
+
       const match = matchmaker.getMatchBySocket(socket.id) || matchmaker.getMatchBySession(socket.data.sessionId);
       if (!match) return;
       if (payload?.matchId && match.matchId !== payload.matchId) return;

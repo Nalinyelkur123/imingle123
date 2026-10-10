@@ -20,6 +20,7 @@ export type MediaStatus =
   | "requesting"
   | "ready"
   | "denied"
+  | "permission_denied"
   | "not_found"
   | "not_readable"
   | "overconstrained"
@@ -54,13 +55,17 @@ export interface UseMediaStreamResult {
   toggleAudio: (forceState?: boolean) => boolean;
   toggleVideo: (forceState?: boolean) => boolean;
   switchCamera: (
-    onTrackReplaced?: (newTrack: MediaStreamTrack) => Promise<void> | void
+    onTrackReplaced?: (newTrack: MediaStreamTrack) => Promise<void> | void,
+    videoElementOverride?: React.RefObject<HTMLVideoElement | null> | HTMLVideoElement | null
   ) => Promise<boolean>;
   releaseMedia: () => void;
   checkPermissionState: () => Promise<"granted" | "prompt" | "denied" | "unknown">;
 }
 
-export function useMediaStream(mode: "video" | "text" = "video"): UseMediaStreamResult {
+export function useMediaStream(
+  mode: "video" | "text" = "video",
+  videoRef?: React.RefObject<HTMLVideoElement | null>
+): UseMediaStreamResult {
   const [status, setStatus] = useState<MediaStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [hasVideo, setHasVideo] = useState(false);
@@ -105,10 +110,11 @@ export function useMediaStream(mode: "video" | "text" = "video"): UseMediaStream
   // Check permission state via Permissions API where supported
   const checkPermissionState = useCallback(async (): Promise<"granted" | "prompt" | "denied" | "unknown"> => {
     if (typeof window === "undefined" || !navigator.permissions?.query) {
-      return "unknown";
+      // Browsers without Permissions API for camera/mic (Safari/WebKit) require a prompt
+      return "prompt";
     }
     try {
-      // Some browsers (e.g. Firefox) throw TypeError when querying 'camera'
+      // Some browsers (e.g. Safari, Firefox) throw TypeError when querying 'camera'
       const camPerm = await navigator.permissions.query({ name: "camera" as PermissionName });
       let micPerm: PermissionStatus | null = null;
       try {
@@ -123,7 +129,9 @@ export function useMediaStream(mode: "video" | "text" = "video"): UseMediaStream
       }
       return "prompt";
     } catch {
-      return "unknown";
+      // Safari/WebKit throws TypeError on querying 'camera'; return 'prompt'
+      // so browser displays the "Enable Camera" banner/prompt clearly rather than being treated as idle/inert.
+      return "prompt";
     }
   }, []);
 
@@ -252,57 +260,128 @@ export function useMediaStream(mode: "video" | "text" = "video"): UseMediaStream
         } catch (err1: unknown) {
           const errName1 = err1 instanceof Error ? err1.name : "";
 
-          // If user explicitly denied, do NOT retry automatically with reduced constraints
+          // BUG-004: If user denied, check if user allowed one device (audio-only or video-only) before giving up
           if (errName1 === "NotAllowedError" || errName1 === "PermissionDeniedError") {
-            throw err1;
-          }
-
-          // Cascade 2: Relaxed video + audio constraints (in case resolution was overconstrained)
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: targetFacing },
-              audio: true,
-            });
-          } catch (err2: unknown) {
-            const errName2 = err2 instanceof Error ? err2.name : "";
-            if (errName2 === "NotAllowedError" || errName2 === "PermissionDeniedError") {
-              throw err2;
-            }
-
-            // Cascade 3: Basic video + audio
-            try {
-              stream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-                audio: true,
-              });
-            } catch (err3: unknown) {
-              const errName3 = err3 instanceof Error ? err3.name : "";
-              if (errName3 === "NotAllowedError" || errName3 === "PermissionDeniedError") {
-                throw err3;
-              }
-
-              if (!allowFallback) {
-                throw err3;
-              }
-
-              // Cascade 4: If video hardware missing, try audio-only fallback
+            if (allowFallback) {
               try {
+                // Test audio-only (user might have allowed mic but denied camera)
                 stream = await navigator.mediaDevices.getUserMedia({
                   video: false,
                   audio: true,
                 });
                 isAudioOnlyFallback = true;
               } catch {
-                // Cascade 5: If microphone missing, try video-only fallback
                 try {
+                  // Test video-only (user might have allowed camera but denied mic)
                   stream = await navigator.mediaDevices.getUserMedia({
                     video: true,
                     audio: false,
                   });
                   isVideoOnlyFallback = true;
                 } catch {
-                  // Both failed: throw the original specific error
-                  throw err3;
+                  // Both denied (or neither permitted)
+                  throw err1;
+                }
+              }
+            } else {
+              throw err1;
+            }
+          } else if (errName1 === "NotFoundError" || errName1 === "DevicesNotFoundError") {
+            // BUG-003: Hardware missing. Do NOT redundantly execute Cascade 2 (1080p/720p)
+            // and Cascade 3 (basic video+audio). Skip directly to single-device fallbacks.
+            if (!allowFallback) {
+              throw err1;
+            }
+            try {
+              // Try audio-only (camera physically missing)
+              stream = await navigator.mediaDevices.getUserMedia({
+                video: false,
+                audio: true,
+              });
+              isAudioOnlyFallback = true;
+            } catch {
+              try {
+                // Try video-only (microphone physically missing)
+                stream = await navigator.mediaDevices.getUserMedia({
+                  video: true,
+                  audio: false,
+                });
+                isVideoOnlyFallback = true;
+              } catch {
+                // Both hardware components missing: re-throw original NotFoundError
+                throw err1;
+              }
+            }
+          } else {
+            // Cascade 2: Relaxed video + audio constraints (in case resolution was overconstrained)
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: targetFacing },
+                audio: true,
+              });
+            } catch (err2: unknown) {
+              const errName2 = err2 instanceof Error ? err2.name : "";
+              if (errName2 === "NotAllowedError" || errName2 === "PermissionDeniedError") {
+                if (allowFallback) {
+                  try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+                    isAudioOnlyFallback = true;
+                  } catch {
+                    try {
+                      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                      isVideoOnlyFallback = true;
+                    } catch {
+                      throw err2;
+                    }
+                  }
+                } else {
+                  throw err2;
+                }
+              } else if (errName2 === "NotFoundError" || errName2 === "DevicesNotFoundError") {
+                if (!allowFallback) throw err2;
+                try {
+                  stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+                  isAudioOnlyFallback = true;
+                } catch {
+                  try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    isVideoOnlyFallback = true;
+                  } catch {
+                    throw err2;
+                  }
+                }
+              } else {
+                // Cascade 3: Basic video + audio
+                try {
+                  stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: true,
+                  });
+                } catch (err3: unknown) {
+                  if (!allowFallback) {
+                    throw err3;
+                  }
+
+                  // Cascade 4: If video hardware missing, try audio-only fallback
+                  try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                      video: false,
+                      audio: true,
+                    });
+                    isAudioOnlyFallback = true;
+                  } catch {
+                    // Cascade 5: If microphone missing, try video-only fallback
+                    try {
+                      stream = await navigator.mediaDevices.getUserMedia({
+                        video: true,
+                        audio: false,
+                      });
+                      isVideoOnlyFallback = true;
+                    } catch {
+                      // Both failed: throw the original specific error
+                      throw err3;
+                    }
+                  }
                 }
               }
             }
@@ -349,7 +428,7 @@ export function useMediaStream(mode: "video" | "text" = "video"): UseMediaStream
           console.warn(`[MEDIA] getUserMedia failed with [${errorName}]: ${errorMsg}`);
 
           if (errorName === "NotAllowedError" || errorName === "PermissionDeniedError") {
-            setStatus("denied");
+            setStatus("permission_denied");
             setErrorMessage(
               "Camera and microphone access was denied. Please click the lock or camera icon in your browser address bar to allow permissions, then click Retry."
             );
@@ -434,9 +513,20 @@ export function useMediaStream(mode: "video" | "text" = "video"): UseMediaStream
   // Switch camera (front / back) on mobile and replace track on active RTCPeerConnection
   const switchCamera = useCallback(
     async (
-      onTrackReplaced?: (newTrack: MediaStreamTrack) => Promise<void> | void
+      onTrackReplaced?: (newTrack: MediaStreamTrack) => Promise<void> | void,
+      videoElementOverride?: React.RefObject<HTMLVideoElement | null> | HTMLVideoElement | null
     ): Promise<boolean> => {
       if (mode !== "video" || !streamRef.current) return false;
+
+      const isMobile =
+        typeof window !== "undefined" &&
+        (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+          (navigator.maxTouchPoints > 0 && window.innerWidth <= 1024));
+
+      // If we know there is only 1 camera on a desktop, switch cannot be performed
+      if (!isMobile && deviceInfo.videoInputs.length === 1) {
+        return false;
+      }
 
       const nextFacing: "user" | "environment" =
         facingMode === "user" ? "environment" : "user";
@@ -449,7 +539,10 @@ export function useMediaStream(mode: "video" | "text" = "video"): UseMediaStream
             height: { ideal: 720 },
           },
           audio: false,
-        }).catch(async () => {
+        }).catch(async (exactErr) => {
+          if (!isMobile && deviceInfo.videoInputs.length === 1) {
+            throw exactErr;
+          }
           // Fallback without 'exact' if exact match fails
           return await navigator.mediaDevices.getUserMedia({
             video: { facingMode: nextFacing },
@@ -463,6 +556,14 @@ export function useMediaStream(mode: "video" | "text" = "video"): UseMediaStream
         const currentStream = streamRef.current;
         const oldVideoTrack = currentStream.getVideoTracks()[0];
 
+        // If returned track has the exact same deviceId as current track, no switch occurred
+        const oldDeviceId = oldVideoTrack?.getSettings()?.deviceId;
+        const newDeviceId = newVideoTrack.getSettings()?.deviceId;
+        if (oldDeviceId && newDeviceId && oldDeviceId === newDeviceId) {
+          newVideoTrack.stop();
+          return false;
+        }
+
         // Replace track in active MediaStream
         if (oldVideoTrack) {
           currentStream.removeTrack(oldVideoTrack);
@@ -475,16 +576,34 @@ export function useMediaStream(mode: "video" | "text" = "video"): UseMediaStream
           await onTrackReplaced(newVideoTrack);
         }
 
-        bindTrackEvents(currentStream);
+        // BUG-007: Construct a new MediaStream instance so React state updates
+        // and Safari/WebKit attaches the new stream to the video element.
+        const updatedStream = new MediaStream(currentStream.getTracks());
+        streamRef.current = updatedStream;
+        bindTrackEvents(updatedStream);
         setFacingMode(nextFacing);
-        setStream(currentStream);
+        setStream(updatedStream);
+
+        // Ensure video element srcObject is updated immediately if attached
+        const targetVideoEl =
+          (videoElementOverride && "current" in videoElementOverride
+            ? videoElementOverride.current
+            : videoElementOverride instanceof HTMLVideoElement
+            ? videoElementOverride
+            : null) || videoRef?.current;
+        if (targetVideoEl) {
+          // eslint-disable-next-line react-hooks/immutability
+          targetVideoEl.srcObject = updatedStream;
+          targetVideoEl.play().catch(() => {});
+        }
+
         return true;
       } catch (err) {
         console.warn("[MEDIA] Could not switch camera facingMode:", err);
         return false;
       }
     },
-    [mode, facingMode, bindTrackEvents]
+    [mode, facingMode, bindTrackEvents, deviceInfo.videoInputs.length, videoRef]
   );
 
   // Initial setup: discover devices and determine whether permissions are already granted
@@ -512,10 +631,10 @@ export function useMediaStream(mode: "video" | "text" = "video"): UseMediaStream
 
         const perm = await checkPermissionState();
         if (!isSubscribed) return;
-        if (perm === "prompt") {
+        if (perm === "prompt" || perm === "unknown") {
           setStatus((prev) => (prev === "idle" ? "prompt" : prev));
         } else if (perm === "denied") {
-          setStatus("denied");
+          setStatus("permission_denied");
           setErrorMessage(
             "Camera and microphone access was previously denied. Please enable access in your browser settings and click Retry."
           );
