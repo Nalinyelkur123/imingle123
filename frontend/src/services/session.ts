@@ -54,9 +54,10 @@ export function clearStoredSession(): void {
  * Validates with the backend using HMAC token header.
  */
 export async function initAnonymousSession(
-  mode: "video" | "text" = "video"
+  mode: "video" | "text" = "video",
+  isRetry = false
 ): Promise<AnonymousSession | null> {
-  const existingToken = getStoredSessionToken();
+  const existingToken = isRetry ? null : getStoredSessionToken();
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -86,10 +87,10 @@ export async function initAnonymousSession(
     });
 
     if (!res.ok) {
-      // If token expired/invalid, clear local token and re-init fresh
-      if (res.status === 401 || res.status === 404) {
+      // If an existing token was rejected as expired/invalid (401/403), clear and retry once
+      if (existingToken && (res.status === 401 || res.status === 403) && !isRetry) {
         clearStoredSession();
-        return initAnonymousSession(mode);
+        return initAnonymousSession(mode, true);
       }
       throw new Error(`Session initialization failed with status ${res.status}`);
     }

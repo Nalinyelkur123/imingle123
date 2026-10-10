@@ -79,12 +79,6 @@ function createUniqueId(prefix = "msg"): string {
   return `${prefix}-${Date.now()}-${msgCounter}-${Math.random().toString(36).substring(2, 7)}`;
 }
 
-function formatElapsedSeconds(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
-}
-
 function debugLog(...args: unknown[]): void {
   if (process.env.NODE_ENV !== "production") {
     console.log(...args);
@@ -235,7 +229,6 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   const connectionWatchdogRef = useRef<NodeJS.Timeout | null>(null);
   const isStartingRef = useRef(false);
   const handleNextRef = useRef<() => void>(() => {});
-  const [searchElapsedSeconds, setSearchElapsedSeconds] = useState(0);
 
   const QUEUE_TIMEOUT_SECONDS = 120;
   const SIGNALING_TIMEOUT_MS = 6000;
@@ -464,14 +457,9 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     };
   }, [cleanupPeerConnection, releaseMedia, clearQueueTimeout, clearConnectionWatchdog]);
 
-  // Manage queue timeout (120s) and real-time elapsed seconds counter when in SEARCHING state (BUG-013)
+  // Manage queue timeout (120s) when in SEARCHING state (BUG-013)
   useEffect(() => {
     if (chatState === ChatState.SEARCHING) {
-      setSearchElapsedSeconds(0);
-      const searchTicker = setInterval(() => {
-        setSearchElapsedSeconds((prev) => prev + 1);
-      }, 1000);
-
       clearQueueTimeout();
       queueTimeoutRef.current = setTimeout(() => {
         setMessages((prev) => [
@@ -486,11 +474,9 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       }, QUEUE_TIMEOUT_SECONDS * 1000);
 
       return () => {
-        clearInterval(searchTicker);
         clearQueueTimeout();
       };
     } else {
-      setSearchElapsedSeconds(0);
       clearQueueTimeout();
     }
     return () => {
@@ -1678,9 +1664,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                         </div>
                       </div>
 
-                      <span className="text-xs sm:text-sm font-bold text-white tracking-wide flex items-center justify-center gap-1.5">
-                        <span>Looking for a partner...</span>
-                        <span className="text-[11px] font-mono text-rose-300">({formatElapsedSeconds(searchElapsedSeconds)})</span>
+                      <span className="text-xs sm:text-sm font-bold text-white tracking-wide">
+                        Looking for a partner...
                       </span>
                       {interests.length > 0 ? (
                         <div className="mt-1 flex flex-wrap justify-center gap-1 max-w-[240px]">
@@ -2310,9 +2295,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white flex items-center justify-center gap-1.5">
-                      <span>Looking for someone to chat with...</span>
-                      <span className="text-xs sm:text-sm font-mono text-rose-500 dark:text-rose-400">({formatElapsedSeconds(searchElapsedSeconds)})</span>
+                    <h3 className="text-sm sm:text-lg font-bold text-gray-900 dark:text-white">
+                      Looking for someone to chat with...
                     </h3>
                     <p className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 max-w-sm mx-auto">
                       {interests.length > 0

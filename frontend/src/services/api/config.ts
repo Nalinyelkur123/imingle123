@@ -2,17 +2,19 @@
 // NexusChat — API & WebSocket Dynamic Configuration
 // ============================================================================
 
+const PROD_BACKEND_URL = "https://imingle-backend.onrender.com";
+
 export function getApiBaseUrl(): string {
   if (typeof window !== "undefined") {
     const { hostname } = window.location;
     const envUrl = process.env.NEXT_PUBLIC_API_URL;
 
-    // 1. If an explicit API URL is configured, use it
+    // 1. If an explicit remote API URL is configured, use it
     if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
       return envUrl;
     }
 
-    // 2. Check if hostname is a LAN IP or mDNS hostname (.local)
+    // 2. Check if hostname is a LAN IP or mDNS hostname (.local) for local mobile testing
     const isLanIp =
       /^192\.168\./.test(hostname) ||
       /^10\./.test(hostname) ||
@@ -27,14 +29,12 @@ export function getApiBaseUrl(): string {
       return envUrl || "http://localhost:3001";
     }
 
-    // 4. In production, default fallback to configured URL or origin
-    return (
-      process.env.NEXT_PUBLIC_API_URL ||
-      (typeof window !== "undefined" ? window.location.origin : "http://localhost:3001")
-    );
+    // 4. In production (e.g. vmingle.in or deployed sites):
+    // The static frontend is hosted separately from the backend Express/Socket.IO server.
+    return PROD_BACKEND_URL;
   }
 
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+  return process.env.NEXT_PUBLIC_API_URL || PROD_BACKEND_URL;
 }
 
 /**
@@ -45,7 +45,7 @@ export function getWsUrl(): string {
     const { hostname } = window.location;
     const envUrl = process.env.NEXT_PUBLIC_WS_URL;
 
-    // 1. If an explicit WebSocket URL is configured, use it
+    // 1. If an explicit remote WebSocket URL is configured, use it
     if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
       return envUrl;
     }
@@ -65,12 +65,9 @@ export function getWsUrl(): string {
       return envUrl || "http://localhost:3001";
     }
 
-    // 4. In production, default fallback to configured URL or origin
-    return (
-      process.env.NEXT_PUBLIC_WS_URL ||
-      (typeof window !== "undefined" ? window.location.origin : "http://localhost:3001")
-    );
+    // 4. In production (e.g. vmingle.in):
+    return PROD_BACKEND_URL;
   }
 
-  return process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3001";
+  return process.env.NEXT_PUBLIC_WS_URL || PROD_BACKEND_URL;
 }
