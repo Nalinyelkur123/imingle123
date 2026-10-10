@@ -19,24 +19,26 @@ export const WEBRTC_OFFER = 'webrtc_offer' as const;
 export const WEBRTC_ANSWER = 'webrtc_answer' as const;
 export const ICE_CANDIDATE = 'ice_candidate' as const;
 export const HAIR_DETECTION_RESULT = 'hair_detection_result' as const;
+export const TYPING = 'typing' as const;
 
 // ── Server → Client Events ──────────────────────────────────────────────────
 export const MATCH_FOUND = 'match_found' as const;
 export const MATCH_ENDED = 'match_ended' as const;
 export const PARTNER_DISCONNECTED = 'partner_disconnected' as const;
 export const MESSAGE_RECEIVED = 'message_received' as const;
+export const TYPING_STATUS = 'typing_status' as const;
 export const QUEUE_STATUS = 'queue_status' as const;
 export const ERROR = 'error' as const;
 
 export const ClientEvents = {
   JOIN_QUEUE, LEAVE_QUEUE, NEXT, STOP, SEND_MESSAGE,
   REPORT_USER, BLOCK_USER, WEBRTC_OFFER, WEBRTC_ANSWER, ICE_CANDIDATE,
-  HAIR_DETECTION_RESULT,
+  HAIR_DETECTION_RESULT, TYPING,
 } as const;
 
 export const ServerEvents = {
   MATCH_FOUND, MATCH_ENDED, PARTNER_DISCONNECTED, MESSAGE_RECEIVED,
-  QUEUE_STATUS, ERROR, WEBRTC_OFFER, WEBRTC_ANSWER, ICE_CANDIDATE,
+  TYPING_STATUS, QUEUE_STATUS, ERROR, WEBRTC_OFFER, WEBRTC_ANSWER, ICE_CANDIDATE,
 } as const;
 
 // ── Chat State ──────────────────────────────────────────────────────────────
@@ -75,6 +77,10 @@ export interface MessageReceivedPayload {
   id: string;
   content: string;
   timestamp: string;
+}
+
+export interface TypingPayload {
+  isTyping: boolean;
 }
 
 // ── Reports ─────────────────────────────────────────────────────────────────

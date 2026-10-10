@@ -113,6 +113,10 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     return [];
   });
   const [inputMessage, setInputMessage] = useState("");
+  const [isStrangerTyping, setIsStrangerTyping] = useState(false);
+  const strangerTypingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const localTypingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isLocallyTypingRef = useRef(false);
   const [sharedInterest, setSharedInterest] = useState<string | null>(null);
   const [currentMatch, setCurrentMatch] = useState<MatchInfo | null>(null);
   const [remoteStreamActive, setRemoteStreamActive] = useState(false);
@@ -221,6 +225,10 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
   const iceCandidateQueueRef = useRef<QueuedIceCandidate[]>([]);
   const pendingOfferRef = useRef<WebRTCOfferPayload | null>(null);
   const currentMatchRef = useRef<MatchInfo | null>(null);
+  const chatStateRef = useRef<ChatState>(chatState);
+  useEffect(() => {
+    chatStateRef.current = chatState;
+  }, [chatState]);
   const iceServersRef = useRef<RTCIceServer[]>(DEFAULT_ICE_SERVERS);
   const lastActionTimeRef = useRef<number>(0);
   const lastSendTimeRef = useRef<number>(0);
@@ -381,9 +389,34 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     fps: 5,
   });
 
+  // Clean up typing timers & status
+  const clearStrangerTyping = useCallback(() => {
+    if (strangerTypingTimeoutRef.current) {
+      clearTimeout(strangerTypingTimeoutRef.current);
+      strangerTypingTimeoutRef.current = null;
+    }
+    setIsStrangerTyping(false);
+  }, []);
+
+  const resetLocalTyping = useCallback(() => {
+    if (localTypingTimeoutRef.current) {
+      clearTimeout(localTypingTimeoutRef.current);
+      localTypingTimeoutRef.current = null;
+    }
+    if (isLocallyTypingRef.current) {
+      isLocallyTypingRef.current = false;
+      try {
+        const socket = connectSocket();
+        socket.emit(SocketEvents.TYPING, { isTyping: false });
+      } catch {}
+    }
+  }, []);
+
   // Clean up WebRTC peer connection
   const cleanupPeerConnection = useCallback((clearQueues = false) => {
     clearConnectionWatchdog();
+    clearStrangerTyping();
+    resetLocalTyping();
     if (clearQueues) {
       iceCandidateQueueRef.current = [];
       pendingOfferRef.current = null;
@@ -412,7 +445,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     setRemoteStreamActive(false);
     setRemoteHasVideo(false);
     setRemoteAutoplayBlocked(false);
-  }, [clearConnectionWatchdog]);
+  }, [clearConnectionWatchdog, clearStrangerTyping, resetLocalTyping]);
 
   // Ensure local video element srcObject is bound whenever localStream changes
   useEffect(() => {
@@ -1004,6 +1037,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     };
 
     const handlePeerReconnecting = () => {
+      clearStrangerTyping();
       setPeerReconnecting(true);
       setMessages((prev) => [
         ...prev,
@@ -1115,6 +1149,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       sharedInterests?: string[];
     }) => {
       setPeerReconnecting(false);
+      clearStrangerTyping();
+      resetLocalTyping();
       connectionMetrics.record('matchFoundAt');
       const matchInfo: MatchInfo = {
         matchId: payload.matchId,
@@ -1160,6 +1196,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     };
 
     const handleMessageReceived = (payload: MessageReceivedPayload) => {
+      clearStrangerTyping();
       setMessages((prev) => [
         ...prev,
         {
@@ -1300,6 +1337,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
     const handleMatchEnded = (payload?: MatchEndedPayload) => {
       clearConnectionWatchdog();
+      clearStrangerTyping();
+      resetLocalTyping();
       cleanupPeerConnection(true);
       currentMatchRef.current = null;
       setCurrentMatch(null);
@@ -1324,6 +1363,24 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       ]);
     };
 
+    const handleTypingStatus = (payload: { isTyping?: boolean }) => {
+      debugLog("[TYPING] Received typing status from partner:", payload?.isTyping);
+      if (strangerTypingTimeoutRef.current) {
+        clearTimeout(strangerTypingTimeoutRef.current);
+        strangerTypingTimeoutRef.current = null;
+      }
+
+      const isConnectedOrMatched = chatStateRef.current === ChatState.CONNECTED || currentMatchRef.current !== null;
+      if (payload?.isTyping && isConnectedOrMatched) {
+        setIsStrangerTyping(true);
+        strangerTypingTimeoutRef.current = setTimeout(() => {
+          setIsStrangerTyping(false);
+        }, 3500);
+      } else {
+        setIsStrangerTyping(false);
+      }
+    };
+
     socket.on("session_established", handleSessionEstablished);
     socket.on(SocketEvents.PEER_RECONNECTING, handlePeerReconnecting);
     socket.on(SocketEvents.PEER_RECONNECTED, handlePeerReconnected);
@@ -1331,6 +1388,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     socket.on(SocketEvents.SESSION_EXPIRED, handleSessionExpired);
     socket.on(SocketEvents.MATCH_FOUND, handleMatchFound);
     socket.on(SocketEvents.MESSAGE_RECEIVED, handleMessageReceived);
+    socket.on(SocketEvents.TYPING_STATUS, handleTypingStatus);
     socket.on(SocketEvents.WEBRTC_OFFER, handleWebRTCOffer);
     socket.on(SocketEvents.WEBRTC_ANSWER, handleWebRTCAnswer);
     socket.on(SocketEvents.ICE_CANDIDATE, handleICECandidate);
@@ -1346,6 +1404,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       socket.off(SocketEvents.SESSION_EXPIRED, handleSessionExpired);
       socket.off(SocketEvents.MATCH_FOUND, handleMatchFound);
       socket.off(SocketEvents.MESSAGE_RECEIVED, handleMessageReceived);
+      socket.off(SocketEvents.TYPING_STATUS, handleTypingStatus);
       socket.off(SocketEvents.WEBRTC_OFFER, handleWebRTCOffer);
       socket.off(SocketEvents.WEBRTC_ANSWER, handleWebRTCAnswer);
       socket.off(SocketEvents.ICE_CANDIDATE, handleICECandidate);
@@ -1360,6 +1419,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     flushIceCandidates,
     startConnectionWatchdog,
     clearConnectionWatchdog,
+    clearStrangerTyping,
+    resetLocalTyping,
     acquireMedia,
     attachLocalTracksToTransceivers,
     clearSignalingWatchdog,
@@ -1408,10 +1469,10 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     showPremiumModal,
   ]);
 
-  // Auto-scroll messages
+  // Auto-scroll messages & typing indicator
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, isStrangerTyping]);
 
   // Send message
   const sendMessage = useCallback(
@@ -1438,6 +1499,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         return;
       }
 
+      resetLocalTyping();
       const socket = connectSocket();
       const newMsg: Message = {
         id: createUniqueId("msg"),
@@ -1454,7 +1516,49 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
 
       socket.emit(SocketEvents.SEND_MESSAGE, { content: text });
     },
-    [inputMessage, chatState]
+    [inputMessage, chatState, resetLocalTyping]
+  );
+
+  // Handle local text input changes & debounced typing notification
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      setInputMessage(val);
+
+      if (chatStateRef.current !== ChatState.CONNECTED && currentMatchRef.current === null) return;
+
+      const socket = connectSocket();
+
+      if (val.trim().length > 0) {
+        if (!isLocallyTypingRef.current) {
+          isLocallyTypingRef.current = true;
+          debugLog("[TYPING] Emitting typing true to partner");
+          socket.emit(SocketEvents.TYPING, { isTyping: true });
+        }
+
+        if (localTypingTimeoutRef.current) {
+          clearTimeout(localTypingTimeoutRef.current);
+        }
+        localTypingTimeoutRef.current = setTimeout(() => {
+          if (isLocallyTypingRef.current) {
+            isLocallyTypingRef.current = false;
+            debugLog("[TYPING] Emitting typing false due to debounce inactivity");
+            socket.emit(SocketEvents.TYPING, { isTyping: false });
+          }
+        }, 1500);
+      } else {
+        if (isLocallyTypingRef.current) {
+          isLocallyTypingRef.current = false;
+          if (localTypingTimeoutRef.current) {
+            clearTimeout(localTypingTimeoutRef.current);
+            localTypingTimeoutRef.current = null;
+          }
+          debugLog("[TYPING] Emitting typing false (cleared text)");
+          socket.emit(SocketEvents.TYPING, { isTyping: false });
+        }
+      }
+    },
+    []
   );
 
   // Submit report
@@ -2337,6 +2441,23 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     );
                   })}
 
+                  {/* Stranger is Typing Indicator */}
+                  {isStrangerTyping && (chatState === ChatState.CONNECTED || currentMatch !== null) && (
+                    <div className="flex flex-col items-start select-none animate-fade-in" role="status" aria-live="polite">
+                      <div className="flex items-center gap-1 text-[10px] sm:text-[11px] text-gray-400 mb-0.5 px-1 font-medium select-text">
+                        <span>Stranger</span>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-2xl rounded-bl-xs bg-gray-100 text-[#18181b] dark:bg-[#201f30] dark:text-gray-100 border border-gray-200/60 dark:border-white/5 px-3.5 py-2 text-xs sm:text-sm shadow-xs">
+                        <span className="italic font-medium text-gray-500 dark:text-gray-400">Stranger is typing</span>
+                        <span className="inline-flex items-center gap-1 ml-0.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-orange-400 to-rose-500 animate-bounce" style={{ animationDelay: "0ms" }} />
+                          <span className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-orange-400 to-rose-500 animate-bounce" style={{ animationDelay: "150ms" }} />
+                          <span className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-orange-400 to-rose-500 animate-bounce" style={{ animationDelay: "300ms" }} />
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* End of Chat Callout Card */}
                   {chatState === ChatState.ENDED && (
                     <div className="my-2 p-3.5 sm:p-5 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-200/80 dark:border-white/10 text-center space-y-2 animate-fade-in">
@@ -2471,7 +2592,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                 <input
                   type="text"
                   value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
+                  onChange={handleInputChange}
                   maxLength={500}
                   aria-label="Message stranger"
                   placeholder={

@@ -25,6 +25,7 @@ import {
   WebRTCAnswerPayload,
   ICECandidatePayload,
   HairDetectionPayload,
+  TypingPayload,
 } from './shared-types.js';
 
 class SocketRateLimiter {
@@ -305,7 +306,7 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
         return;
       }
 
-      const match = matchmaker.getMatchBySocket(socket.id);
+      const match = matchmaker.getMatchBySocket(socket.id) || matchmaker.getMatchBySession(socket.data.sessionId);
       if (!match) {
         socket.emit(ServerEvents.ERROR, {
           code: ErrorCode.NOT_IN_MATCH,
@@ -325,7 +326,8 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
         return;
       }
 
-      const partnerSocketId = matchmaker.getPartnerSocketId(socket.id);
+      const partnerSocketId = matchmaker.getPartnerSocketId(socket.id) ||
+        (match.user1.sessionId === socket.data.sessionId ? match.user2.socketId : match.user1.socketId);
       if (!partnerSocketId) return;
 
       const messagePayload = {
@@ -335,6 +337,32 @@ export function initSocketService(httpServer: HttpServer): SocketIOServer {
       };
 
       io.to(partnerSocketId).emit(ServerEvents.MESSAGE_RECEIVED, messagePayload);
+      io.to(partnerSocketId).emit(ServerEvents.TYPING_STATUS, { isTyping: false });
+    });
+
+    // ── TYPING STATUS ────────────────────────────────────────────────────────
+    socket.on(ClientEvents.TYPING, (payload: TypingPayload) => {
+      if (!socketRateLimiter.checkRateLimit(socket.id, ClientEvents.TYPING, 10, 1000)) {
+        return;
+      }
+
+      const match = matchmaker.getMatchBySocket(socket.id) || matchmaker.getMatchBySession(socket.data.sessionId);
+      if (!match) {
+        logger.warn(`TYPING event received but no match found for socket ${socket.id} (session ${socket.data.sessionId})`);
+        return;
+      }
+
+      const partnerSocketId = matchmaker.getPartnerSocketId(socket.id) ||
+        (match.user1.sessionId === socket.data.sessionId ? match.user2.socketId : match.user1.socketId);
+      if (!partnerSocketId) {
+        logger.warn(`TYPING event received but no partner socket found for socket ${socket.id}`);
+        return;
+      }
+
+      logger.info(`Forwarding TYPING_STATUS (${payload?.isTyping}) from socket ${socket.id} to partner ${partnerSocketId}`);
+      io.to(partnerSocketId).emit(ServerEvents.TYPING_STATUS, {
+        isTyping: Boolean(payload?.isTyping),
+      });
     });
 
     // ── WEBRTC SIGNALING: OFFER ─────────────────────────────────────────────

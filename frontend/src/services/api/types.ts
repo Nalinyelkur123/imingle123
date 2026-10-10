@@ -36,12 +36,14 @@ export const SocketEvents = {
   WEBRTC_ANSWER: 'webrtc_answer',
   ICE_CANDIDATE: 'ice_candidate',
   HAIR_DETECTION_RESULT: 'hair_detection_result',
+  TYPING: 'typing',
 
   // Server → Client
   MATCH_FOUND: 'match_found',
   MATCH_ENDED: 'match_ended',
   PARTNER_DISCONNECTED: 'partner_disconnected',
   MESSAGE_RECEIVED: 'message_received',
+  TYPING_STATUS: 'typing_status',
   QUEUE_STATUS: 'queue_status',
   ERROR: 'error',
 
@@ -74,6 +76,10 @@ export interface MessageReceivedPayload {
   id: string;
   content: string;
   timestamp: string;
+}
+
+export interface TypingPayload {
+  isTyping: boolean;
 }
 
 export enum ReportReason {
