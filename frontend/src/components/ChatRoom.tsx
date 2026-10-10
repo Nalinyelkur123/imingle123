@@ -2086,34 +2086,8 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                     </div>
                   )}
 
-                  {/* Subtle Floating Local Media Controls Toolbar (Camera, Voice & Flip/Switch) */}
+                  {/* Subtle Floating Local Media Controls Toolbar (Voice & Flip/Switch) */}
                   <div className={`absolute bottom-1.5 left-1/2 -translate-x-1/2 ${isKeyboardOpen ? "hidden md:flex" : "flex"} items-center gap-1 rounded-full bg-black/70 backdrop-blur-md px-1.5 py-0.5 sm:px-2 sm:py-1 border border-white/10 shadow-lg opacity-90 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 z-30`}>
-                    {/* Camera Button (Toggle Video Track) */}
-                    <button
-                      onClick={() => toggleVideo()}
-                      type="button"
-                      className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors cursor-pointer ${
-                        isVideoMuted
-                          ? "bg-red-500 text-white"
-                          : "text-gray-300 hover:text-white hover:bg-white/20"
-                      }`}
-                      title={isVideoMuted ? "Turn Camera On" : "Turn Camera Off"}
-                      aria-label={isVideoMuted ? "Turn Camera On" : "Turn Camera Off"}
-                      id="toggle-camera-btn"
-                    >
-                      {isVideoMuted ? (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="1" y1="1" x2="23" y2="23" />
-                          <path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34" />
-                        </svg>
-                      ) : (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M23 7l-7 5 7 5V7z" />
-                          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                        </svg>
-                      )}
-                    </button>
-
                     {/* Voice Button (Toggle Microphone) */}
                     <button
                       onClick={() => toggleAudio()}
