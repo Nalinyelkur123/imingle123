@@ -37,6 +37,8 @@ export interface ConnectionTimingSummary {
   totalConnectMs: number;
 }
 
+export type NumericMilestone = keyof Omit<ConnectionMilestones, 'correlationId' | 'failureReason'>;
+
 class ConnectionMetricsTracker {
   private current: ConnectionMilestones | null = null;
 
@@ -49,9 +51,9 @@ class ConnectionMetricsTracker {
     return id;
   }
 
-  public record(milestone: keyof Omit<ConnectionMilestones, 'correlationId'>, time = performance.now()): void {
+  public record(milestone: NumericMilestone, time = performance.now()): void {
     if (!this.current) return;
-    this.current[milestone] = time as any;
+    this.current[milestone] = time;
   }
 
   public getCorrelationId(): string | undefined {

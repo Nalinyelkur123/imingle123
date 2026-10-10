@@ -412,7 +412,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
     setRemoteStreamActive(false);
     setRemoteHasVideo(false);
     setRemoteAutoplayBlocked(false);
-  }, []);
+  }, [clearConnectionWatchdog]);
 
   // Ensure local video element srcObject is bound whenever localStream changes
   useEffect(() => {
@@ -801,7 +801,7 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
         }
       }
     },
-    [mode, cleanupPeerConnection, flushIceCandidates, clearConnectionWatchdog, clearSignalingWatchdog, attachLocalTracksToTransceivers]
+    [mode, localStream, cleanupPeerConnection, flushIceCandidates, clearConnectionWatchdog, clearSignalingWatchdog, attachLocalTracksToTransceivers]
   );
 
   // Start chat - join matchmaking queue only after media is guaranteed ready
@@ -1353,7 +1353,17 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
       socket.off(SocketEvents.MATCH_ENDED, handleMatchEnded);
       socket.off(SocketEvents.PARTNER_DISCONNECTED, handleMatchEnded);
     };
-  }, [mode, cleanupPeerConnection, setupPeerConnection, flushIceCandidates, startConnectionWatchdog, clearConnectionWatchdog, acquireMedia]);
+  }, [
+    mode,
+    cleanupPeerConnection,
+    setupPeerConnection,
+    flushIceCandidates,
+    startConnectionWatchdog,
+    clearConnectionWatchdog,
+    acquireMedia,
+    attachLocalTracksToTransceivers,
+    clearSignalingWatchdog,
+  ]);
 
   // Keyboard shortcut: ESC skips/stops/starts, or dismisses open modals
   useEffect(() => {
@@ -1573,11 +1583,11 @@ export function ChatRoom({ initialMode = "video", autoStart = true }: ChatRoomPr
                 className={`w-full overflow-hidden transition-all duration-200 ${
                   mobileViewMode === "pip"
                     ? isKeyboardOpen
-                      ? "relative h-[85px] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
-                      : "relative h-[clamp(130px,23dvh,195px)] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
+                      ? "relative h-[95px] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
+                      : "relative h-[clamp(230px,41dvh,390px)] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
                     : isKeyboardOpen
-                    ? "grid grid-cols-2 gap-1.5 h-[80px] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
-                    : "grid grid-cols-2 gap-1.5 sm:gap-2 h-[clamp(115px,20dvh,175px)] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
+                    ? "grid grid-cols-2 gap-1.5 h-[90px] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
+                    : "grid grid-cols-2 gap-1.5 sm:gap-2 h-[clamp(210px,37dvh,350px)] mobile-landscape:h-full md:h-full md:flex md:flex-col md:gap-2.5"
                 }`}
               >
                 {/* 1. STRANGER / REMOTE VIDEO CARD */}
